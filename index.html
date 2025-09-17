@@ -59,7 +59,7 @@
       <!-- Formulario -->
       <section class="card">
         <label>Nombre completo</label>
-        <input id="name" placeholder="Ej: Paola Nerina Tolosa"/>
+        <input id="name" placeholder="Ej: Facundo Rubén Urribarri"/>
 
         <div class="row3">
           <div>
@@ -120,8 +120,9 @@
           <div>
             <label>Sistema de casas</label>
             <select id="houseSystem">
-              <option value="equal">Iguales (actual)</option>
-              <option value="whole">Whole Sign (signo completo)</option>
+              <option value="equal">Iguales</option>
+              <option value="whole">Whole Sign</option>
+              <option value="porphyry">Porphyry (cuadrantes)</option>
             </select>
           </div>
         </div>
@@ -183,6 +184,8 @@ window.addEventListener('load', () => {
   document.getElementById('tz').value='-03:00';
   document.getElementById('lat').value='-38.0';
   document.getElementById('lon').value='-57.56';
+  document.getElementById('houseSystem').value='porphyry';      // sugerido para coincidir
+  document.getElementById('zodiac').value='sidereal_lahiri';    // sugerido para coincidir
 
   // Verificar librerías
   if (!window.Astronomy) {
@@ -202,27 +205,17 @@ window.addEventListener('load', () => {
   function parseTZ(tz){ const m=/([+-])(\d{2}):(\d{2})/.exec(tz||'-03:00'); if(!m) return -3; const s=m[1]==='-'?-1:1; return s*(+m[2]+(+m[3]/60)); }
   function buildDate(day,month,year,hour,minute,tz){ const tzH=parseTZ(tz); return new Date(Date.UTC(+year, +month-1, +day, +hour - tzH, +minute)); }
 
+  // Oblicuidad media (suficiente para casas y MC)
+  const obliq = deg2rad(23.4392911);
+
   // Ayanamsha Lahiri (aprox.) válida 1900–2100 (para signo es suficiente)
   function ayanamshaLahiriDeg(date){
     const y = date.getUTCFullYear() + (date.getUTCMonth()+1-0.5)/12;
     return 23.852 + 0.014 * (y - 2000);
   }
 
-  // Sistemas de casas
-  function houseOf(lon, asc, system='equal'){
-    if (system === 'whole') {
-      const ascSignStart = Math.floor(norm360(asc)/30)*30; // 0° del signo del ASC
-      const d = norm360(lon - ascSignStart);
-      return Math.floor(d/30) + 1;
-    }
-    // Casas iguales desde el grado del ASC
-    const d = norm360(lon - asc);
-    return Math.floor(d/30) + 1;
-  }
-
-  // Ascendente (estimación robusta por búsqueda sobre la eclíptica)
+  // Ascendente (búsqueda sobre la eclíptica)
   async function estimateAscendant(date, latDeg, lonDeg){
-    const obliq = deg2rad(23.4392911);
     const gst = A.SiderealTime(date) * 15 * Math.PI/180;   // rad
     const lst = gst + deg2rad(lonDeg);
     const lat = deg2rad(latDeg);
@@ -237,14 +230,22 @@ window.addEventListener('load', () => {
       const alt = Math.asin(sinAlt);
       const cosAz = (Math.sin(dec)-Math.sin(lat)*sinAlt)/(Math.cos(lat)*Math.cos(alt)+1e-9);
       let az = Math.acos(Math.max(-1,Math.min(1,cosAz)));
-      if(Math.sin(ha)>0) az = 2*Math.PI - az; // 0..2π
+      if(Math.sin(ha)>0) az = 2*Math.PI - az;
       const score = Math.abs(rad2deg(alt)) + Math.abs(rad2deg(az)-90);
       if(score<bestScore){bestScore=score; bestLon=lon;}
     }
     return bestLon;
   }
 
-  // Longitudes eclípticas (tropical) + conversión a sideral si corresponde
+  // MC (longitud eclíptica) a partir de LST
+  function computeMC(date, lonDeg){
+    const lst = A.SiderealTime(date) * 15 * Math.PI/180 + deg2rad(lonDeg); // rad
+    const α = lst; // RA del meridiano
+    const λ = Math.atan2(Math.sin(α)/Math.cos(obliq), Math.cos(α));
+    return norm360(rad2deg(λ));
+  }
+
+  // Longitudes eclípticas geocéntricas (tropical) + conversión a sideral si corresponde
   async function computeLongitudes(date, zodiac='tropical'){
     const bodies=['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto'];
     const res={};
@@ -260,7 +261,72 @@ window.addEventListener('load', () => {
     return res;
   }
 
-  // ====== Textos por signo (todos los planetas) ======
+  // ===== Sistemas de casas =====
+  function angleDiff(a,b){ // distancia a→b en [0,360)
+    return norm360(b - a);
+  }
+  function arcDivide(start, end){ // devuelve [start, start+1/3, start+2/3, end] siguiendo el zodíaco
+    const d = angleDiff(start, end);
+    return [start, norm360(start + d/3), norm360(start + 2*d/3), norm360(start + d)];
+  }
+
+  function getHouseCusps(asc, mc, system='equal'){
+    const cusps = new Array(12).fill(0);
+    if (system === 'whole'){
+      const base = Math.floor(norm360(asc)/30)*30;
+      for(let i=0;i<12;i++) cusps[i] = norm360(base + i*30);
+      return cusps;
+    }
+    if (system === 'equal'){
+      for(let i=0;i<12;i++) cusps[i] = norm360(asc + i*30);
+      return cusps;
+    }
+    // Porphyry: divide en 3 cada cuadrante entre ángulos (ASC, MC, DSC, IC)
+    const dsc = norm360(asc + 180);
+    const ic  = norm360(mc + 180);
+
+    // Cuadrantes: ASC→MC (casas 1-3), MC→DSC (10-12), DSC→IC (7-9), IC→ASC (4-6)
+    const q1 = arcDivide(asc, mc);   // [c1, c2, c3, c4=MC]
+    const q2 = arcDivide(mc, dsc);   // [MC, 11, 12, DSC]
+    const q3 = arcDivide(dsc, ic);   // [DSC, 8, 9, IC]
+    const q4 = arcDivide(ic, asc);   // [IC, 5, 6, ASC]
+
+    // Orden de cusps (1..12): ASC, 2, 3, IC? No. En Porphyry:
+    // 1=ASC, 2=q1[1], 3=q1[2], 4=IC? (q4[0]) No: IC es casa 4.
+    cusps[0] = q1[0]; // 1 ASC
+    cusps[1] = q1[1]; // 2
+    cusps[2] = q1[2]; // 3
+    cusps[3] = ic;    // 4
+    cusps[4] = q4[1]; // 5
+    cusps[5] = q4[2]; // 6
+    cusps[6] = dsc;   // 7
+    cusps[7] = q3[1]; // 8
+    cusps[8] = q3[2]; // 9
+    cusps[9] = mc;    // 10
+    cusps[10]= q2[1]; // 11
+    cusps[11]= q2[2]; // 12
+    return cusps;
+  }
+
+  function houseOfByCusps(lon, cusps){
+    // construye arreglo creciente comenzando en casa 1
+    const c = cusps.map(x=>norm360(x));
+    const out = [c[0]];
+    for(let i=1;i<12;i++){
+      let v = c[i];
+      if (v < out[i-1]) v += 360;
+      out.push(v);
+    }
+    let L = lon;
+    if (L < out[0]) L += 360;
+    for(let i=0;i<12;i++){
+      const a = out[i], b = (i===11)? out[11]+(out[1]-out[0]+360)%360 : out[i+1];
+      if (L >= a && L < b) return i+1;
+    }
+    return 12;
+  }
+
+  // ===== Texto por signo / casas =====
   const TEXTS = {
     Sun:{Aries:"Energía pionera, iniciativa y coraje. Aprende a sostener procesos.",
       Tauro:"Constancia, sentido práctico y disfrute. Evitar rigidez y apegos.",
@@ -384,7 +450,6 @@ window.addEventListener('load', () => {
       Piscis:"Espiritualidad y disolución del ego."}
   };
 
-  // Textos por casa (genéricos)
   const HOUSES = {
     1:"Impulso personal, identidad y comienzo de ciclos.",
     2:"Recursos, valor propio y estabilidad material/energética.",
@@ -400,8 +465,32 @@ window.addEventListener('load', () => {
     12:"Cierre de ciclos, inconsciente, retiro y espiritualidad."
   };
 
-  // ====== Dibujo de rueda y casas ======
-  function drawWheel(ctx,w,h,longs,asc,system){
+  // ===== Detección día/noche y Fortuna =====
+  function sunEquatorialFromEclLon(lon){
+    // β≈0 para el Sol
+    const λ = deg2rad(lon);
+    const sinDec = Math.sin(obliq)*Math.sin(λ);
+    const dec = Math.asin(sinDec);
+    const ra = Math.atan2(Math.sin(λ)*Math.cos(obliq), Math.cos(λ));
+    return {ra, dec}; // rad
+  }
+  function sunAltitude(date, latDeg, lonDeg, sunLon){
+    const {ra, dec} = sunEquatorialFromEclLon(sunLon);
+    const gst = A.SiderealTime(date)*15*Math.PI/180; // rad
+    const lst = gst + deg2rad(lonDeg);
+    const ha = (lst - ra + 2*Math.PI)%(2*Math.PI);
+    const lat = deg2rad(latDeg);
+    const sinAlt = Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(ha);
+    return rad2deg(Math.asin(sinAlt));
+  }
+  function partOfFortune(ascLon, sunLon, moonLon, isDay){
+    // día: PoF = Asc + Luna − Sol ; noche: Asc − Luna + Sol
+    const v = isDay ? (ascLon + moonLon - sunLon) : (ascLon - moonLon + sunLon);
+    return norm360(v);
+  }
+
+  // ===== Dibujo de rueda y casas =====
+  function drawWheel(ctx,w,h,longs,asc,cusps){
     const cx=w/2,cy=h/2,R=w*0.42,rPlan=R*0.88;
     ctx.clearRect(0,0,w,h);
     // disco
@@ -418,26 +507,24 @@ window.addEventListener('load', () => {
       ctx.strokeStyle="#ead6ef";ctx.lineWidth=1;ctx.stroke();
     }
 
-    // casas desde ASC según sistema
-    if(Number.isFinite(asc)){
-      const base = (system === 'whole')
-        ? Math.floor(norm360(asc)/30)*30   // 0° del signo del ASC
-        : asc;                             // Casas Iguales desde el grado ASC
-
+    // casas por cusps
+    if (Array.isArray(cusps) && cusps.length===12){
       ctx.save(); ctx.translate(cx,cy);
       for(let i=0;i<12;i++){
-        const lon = norm360(base + i*30);
+        const lon = cusps[i];
         const ang=eclLonToAngle(lon);
         ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(ang)*R*0.96, Math.sin(ang)*R*0.96);
         ctx.strokeStyle="#c7a1d8"; ctx.lineWidth=2; ctx.stroke();
 
-        // número casa
-        const mid = norm360(base + i*30 + 15); const am=eclLonToAngle(mid);
+        // número en el medio de casa i (entre cusps[i] y cusps[(i+1)%12])
+        const next = cusps[(i+1)%12];
+        const mid = norm360(cusps[i] + angleDiff(cusps[i], next)/2);
+        const am=eclLonToAngle(mid);
         const rx = Math.cos(am)*R*0.65, ry=Math.sin(am)*R*0.65;
         ctx.fillStyle="#9b5de5"; ctx.font="bold 16px Inter";
         ctx.fillText(String(i+1), cx+rx, cy+ry);
       }
-      // marcar ASC (siempre el grado real del ASC)
+      // marcar ASC
       const angAsc=eclLonToAngle(asc);
       ctx.strokeStyle="#9b5de5"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(angAsc)*R, Math.sin(angAsc)*R); ctx.stroke();
       ctx.restore();
@@ -462,30 +549,33 @@ window.addEventListener('load', () => {
       }
     }
 
-    // planetas
-    const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇"};
+    // planetas + Fortuna
+    const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇",Fortuna:"⊗"};
     ctx.font='20px serif'; ctx.fillStyle='#1f1142';
-    for(const k of keys){
+    for(const k of Object.keys(longs)){
       const ang=eclLonToAngle(longs[k]);
       const x=cx+Math.cos(ang)*rPlan, y=cy+Math.sin(ang)*rPlan;
       ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill(); ctx.strokeStyle="#cdb0df"; ctx.stroke();
       ctx.fillStyle="#1f1142"; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(glyphs[k]||k[0], x, y);
     }
+    if (Number.isFinite(longs.Fortuna)){
+      const ang=eclLonToAngle(longs.Fortuna);
+      const x=cx+Math.cos(ang)*rPlan, y=cy+Math.sin(ang)*rPlan;
+      ctx.beginPath(); ctx.arc(x,y,12,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill(); ctx.strokeStyle="#a97ddb"; ctx.stroke();
+      ctx.fillStyle="#1f1142"; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(glyphs.Fortuna, x, y);
+    }
   }
 
-  // ===== Informe HTML =====
-  function planetParagraph(name, lon, asc, system){
+  function planetParagraph(name, lon, house){
     const sign = signOf(lon);
-    const house = Number.isFinite(asc) ? houseOf(lon, asc, system) : null;
-    const textSign = (TEXTS[name] && TEXTS[name][sign]) ? TEXTS[name][sign] : `${name} en ${sign}.`;
     const nice = ({
       Sun:"Sol", Moon:"Luna", Mercury:"Mercurio", Venus:"Venus", Mars:"Marte",
-      Jupiter:"Júpiter", Saturn:"Saturno", Uranus:"Urano", Neptune:"Neptuno", Pluto:"Plutón"
+      Jupiter:"Júpiter", Saturn:"Saturno", Uranus:"Urano", Neptune:"Neptuno", Pluto:"Plutón",
     })[name] || name;
+    const textSign = (TEXTS[name] && TEXTS[name][sign]) ? TEXTS[name][sign] : `${nice} en ${sign}.`;
     return `<p><b>${nice}</b> en <b>${sign}</b>${house?` (Casa ${house})`:''}: ${textSign}${house?` — ${HOUSES[house]}`:''}</p>`;
   }
 
-  // helper grados con signo
   function fmtLon(lon){
     const s = signOf(lon);
     const L = ((lon % 360) + 360) % 360;
@@ -516,37 +606,57 @@ window.addEventListener('load', () => {
       const date = buildDate(day,month,year,hour,minute,tz);
       const longs = await computeLongitudes(date, zodiac);
       const asc = await estimateAscendant(date, lat, lon);
+      const mc  = computeMC(date, lon);
+      const cusps = getHouseCusps(asc, mc, system);
 
+      // Fortuna automática
+      const sunAlt = sunAltitude(date, lat, lon, longs.Sun);
+      const isDay = sunAlt > 0;
+      const fortunaLon = partOfFortune(asc, longs.Sun, longs.Moon, isDay);
+      longs.Fortuna = fortunaLon;
+
+      // Casas por cusps
+      const houses = {};
+      for(const k of ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]){
+        houses[k] = houseOfByCusps(longs[k], cusps);
+      }
+      const fortunaHouse = houseOfByCusps(fortunaLon, cusps);
+
+      // Dibujo
       const canvas=document.getElementById('wheel');
-      drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs, asc, system);
+      drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs, asc, cusps);
 
       const dd=`${day}/${month}/${year}`, tt=`${hour}:${minute}`, place=`${city}, ${country}`;
       const zodiacLabel = (zodiac === 'sidereal_lahiri') ? 'Sideral – Lahiri' : 'Tropical';
-      const casasLabel = (system === 'whole') ? 'Whole Sign' : 'Iguales';
+      const casasLabel = (system === 'whole') ? 'Whole Sign' : (system==='porphyry' ? 'Porphyry' : 'Iguales');
 
-      // Construir informe + aviso profesional
+      // Informe
       let html = `<h3 style="margin:.2em 0">${name}</h3>
       <div><b>Datos:</b> ${dd} · ${tt} · ${place}</div>
       <div class="hint">Zodíaco: ${zodiacLabel} · Casas: ${casasLabel}</div>
       <hr class="hr"/>`;
 
       const order = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"];
-      for(const k of order){ html += planetParagraph(k, longs[k], asc, system); }
+      for(const k of order){ html += planetParagraph(k, longs[k], houses[k]); }
+
+      // Fortuna
+      html += `<p><b>Rueda de la Fortuna</b> en <b>${signOf(fortunaLon)}</b> (Casa ${fortunaHouse}).</p>`;
 
       html += `<p class="hint"><strong>Aviso profesional:</strong> La presente carta astral ha sido calculada a partir de los <u>datos exactos de nacimiento</u> (fecha, hora y lugar) proporcionados, empleando efemérides astronómicas y el sistema seleccionado de casas. Su contenido es interpretativo y orientativo; no sustituye asesoramiento médico, psicológico, financiero ni legal. <em>Documento confidencial, para uso exclusivo del/la consultante.</em></p>`;
 
-      // Bloque de verificación técnica
+      // Verificación técnica
       const debugBox = `
         <div class="debug">
           <b>Verificación técnica</b><br>
           UTC usado: ${date.toISOString()}<br>
-          Sol: ${fmtLon(longs.Sun)} &nbsp;|&nbsp; Luna: ${fmtLon(longs.Moon)}
+          Sol: ${fmtLon(longs.Sun)} &nbsp;|&nbsp; Luna: ${fmtLon(longs.Moon)} &nbsp;|&nbsp; ASC: ${fmtLon(asc)} &nbsp;|&nbsp; MC: ${fmtLon(mc)}<br>
+          Día/Noche: ${sunAlt>0?'Día':'Noche'} · Fortuna: ${fmtLon(fortunaLon)}
         </div>
       `;
 
       document.getElementById('report').innerHTML = debugBox + html;
 
-      // Preparar export a Word (HTML + imagen del canvas)
+      // Export (Word) = portada + imagen + informe (sin caja debug grande)
       const imgData = canvas.toDataURL('image/png');
       const exportHTML = `
         <h1 style="font-family:Arial">Carta Astral – Sanación 11.11</h1>
@@ -627,3 +737,4 @@ window.addEventListener('load', () => {
 </script>
 </body>
 </html>
+
