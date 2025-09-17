@@ -13,6 +13,9 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <!-- Word .docx (convierte HTML a DOCX) -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.4.1/html-docx.min.js"></script>
+  <!-- Fallback extra para Word -->
+<script defer src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+
 
   <style>
     :root{ --bg:#ffe6f0; --ink:#2d1b2d; --muted:#6a4c6a; --card:#ffffffcc; --accent:#9b5de5; }
@@ -511,17 +514,45 @@ window.addEventListener('load', () => {
     }catch(err){ console.error(err); show('No se pudo generar el PDF. Revisá la consola (F12).'); }
   }
 
-  async function downloadDocx(){
-    try{
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:Arial">${document.getElementById('exportArea').innerHTML}</body></html>`;
-      const blob = window.htmlDocx.asBlob(html, {orientation:'portrait'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'Carta_Astral.docx';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
-    }catch(err){ console.error(err); show('No se pudo generar el Word. Revisá la consola (F12).'); }
+  function saveBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+
+async function downloadDocx(){
+  try{
+    // HTML preparado para exportar (incluye el gráfico + texto)
+    const html = `<!DOCTYPE html>
+      <html><head><meta charset="utf-8">
+      <style>body{font-family:Arial, sans-serif;line-height:1.35}</style>
+      </head><body>${document.getElementById('exportArea').innerHTML}</body></html>`;
+
+    // Intento DOCX con cualquiera de los dos nombres globales
+    const asBlob =
+      (window.htmlDocx && window.htmlDocx.asBlob) ||
+      (window.HTMLDocx && window.HTMLDocx.asBlob);
+
+    if (asBlob) {
+      const blob = asBlob(html);      // ➜ .docx
+      saveBlob(blob, 'Carta_Astral.docx');
+      return;
+    }
+
+    // Fallback: .DOC basado en HTML (Word lo abre bien)
+    const blobDoc = new Blob(['\ufeff', html], { type: 'application/msword' });
+    saveBlob(blobDoc, 'Carta_Astral.doc');
+  } catch(err){
+    console.error(err);
+    const banner = document.getElementById('banner');
+    banner.style.display='block';
+    banner.className='alert';
+    banner.innerHTML = 'No se pudo generar el Word. Revisá la consola (F12).';
   }
+}
 
   // Eventos
   document.getElementById('btnRender').addEventListener('click', renderAll);
