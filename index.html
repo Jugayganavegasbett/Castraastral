@@ -1,21 +1,27 @@
-<!DOCTYPE html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Generador de Carta Astral – Sanación 11.11</title>
-  <!-- ✅ Librerías con fallback -->
+
+  <!-- Librerías con fallback -->
   <script defer src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.browser.min.js"
-          onerror="var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/astronomy-engine@2.1.1/astronomy.browser.min.js';document.head.appendChild(s);"></script>
+          onerror="var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/astronomy-engine@2.1.1/astronomy.browser.min.js';document.head.appendChild(s);">
+  </script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- Word .docx (convierte HTML a DOCX) -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.4.1/html-docx.min.js"></script>
+
   <style>
     :root{ --bg:#ffe6f0; --ink:#2d1b2d; --muted:#6a4c6a; --card:#ffffffcc; --accent:#9b5de5; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
     .wrap{max-width:1000px;margin:32px auto;padding:0 16px}
-    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+    header{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:16px}
     h1{font-size:clamp(20px,3vw,28px);margin:0}
+    .actions{display:flex;gap:8px}
     .card{background:var(--card);padding:16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
     .grid{display:grid;gap:16px}
     @media(min-width:900px){.grid{grid-template-columns:360px 1fr}}
@@ -30,13 +36,18 @@
     .hint{font-size:12px;color:var(--muted)}
     .alert{background:#fff3cd;color:#7f5f00;border:1px solid #ffe69c;padding:10px;border-radius:10px;margin:0 0 12px;display:none}
     .ok{background:#e9f9ef;color:#0f5132;border:1px solid #a3e4c0}
+    hr.hr{border:none;border-top:1px solid #e6cfe1;margin:12px 0}
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <h1>✨ Generador de Carta Astral</h1>
-      <button id="btnPdf">Descargar PDF</button>
+      <div class="actions">
+        <button id="btnRender" class="secondary">Generar carta</button>
+        <button id="btnPdf">Descargar PDF</button>
+        <button id="btnDocx">Descargar Word</button>
+      </div>
     </header>
 
     <div id="banner" class="alert"></div>
@@ -55,10 +66,8 @@
           <div>
             <label>Mes</label>
             <select id="month">
-              <option value="01">01</option><option value="02">02</option><option value="03">03</option>
-              <option value="04">04</option><option value="05">05</option><option value="06">06</option>
-              <option value="07">07</option><option value="08">08</option><option value="09">09</option>
-              <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+              <option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option>
+              <option>07</option><option>08</option><option>09</option><option>10</option><option>11</option><option>12</option>
             </select>
           </div>
           <div>
@@ -105,9 +114,6 @@
             <label>Zona horaria (UTC±hh:mm)</label>
             <input id="tz" placeholder="-03:00"/>
           </div>
-          <div style="display:flex;align-items:flex-end;justify-content:end">
-            <button id="btnRender" class="secondary">Generar carta</button>
-          </div>
         </div>
 
         <p class="hint">Tip: si no sabés lat/lon, dejá los valores por defecto. Argentina: zona horaria <b>-03:00</b>.</p>
@@ -115,8 +121,8 @@
 
       <!-- Mapa -->
       <section class="card">
-        <canvas id="wheel" width="800" height="800"></canvas>
-        <p class="hint">La rueda zodiacal y los aspectos aparecerán aquí.</p>
+        <canvas id="wheel" width="880" height="880"></canvas>
+        <p class="hint">Rueda zodiacal, casas iguales y aspectos.</p>
       </section>
     </div>
 
@@ -125,6 +131,9 @@
         Completá los datos y presioná <b>Generar carta</b>.
       </div>
     </section>
+
+    <!-- Área invisible para exportar a Word (usamos el mismo HTML del informe + imagen) -->
+    <div id="exportArea" style="display:none"></div>
 
     <footer>© Sanación 11.11 · Demo interpretativo</footer>
   </div>
@@ -135,7 +144,7 @@ window.addEventListener('load', () => {
   function show(msg, ok=false){ banner.style.display='block'; banner.className='alert'+(ok?' ok':''); banner.innerHTML=msg; }
   function hide(){ banner.style.display='none'; }
 
-  // Poblar selects día/año/hora/minuto
+  // Poblar selects
   const daySel = document.getElementById('day');
   for(let d=1; d<=31; d++){ const o=document.createElement('option'); o.value=o.textContent=String(d).padStart(2,'0'); daySel.appendChild(o); }
   const yearSel = document.getElementById('year');
@@ -146,7 +155,7 @@ window.addEventListener('load', () => {
   const minSel = document.getElementById('minute');
   for(let m=0; m<60; m+=1){ const o=document.createElement('option'); o.value=o.textContent=String(m).padStart(2,'0'); minSel.appendChild(o); }
 
-  // Valores demo (podés cambiarlos)
+  // Valores demo
   daySel.value='14'; document.getElementById('month').value='12'; yearSel.value='1986';
   hourSel.value='01'; minSel.value='10';
   document.getElementById('city').value='Mar del Plata';
@@ -157,35 +166,206 @@ window.addEventListener('load', () => {
 
   // Verificar librerías
   if (!window.Astronomy) {
-    show('No se pudo cargar la librería astronómica. Probá recargar (Ctrl+F5).');
+    show('No se pudo cargar la librería astronómica. Recargá (Ctrl+F5).');
   } else { hide(); show('Librerías cargadas correctamente ✅', true); setTimeout(hide, 1500); }
 
-  // === Utilidades ===
+  // ======= Utilidades =======
+  const A = window.Astronomy;
   function deg2rad(d){return d*Math.PI/180}
   function rad2deg(r){return r*180/Math.PI}
+  function norm360(x){return (x%360+360)%360}
   function eclLonToAngle(lon){return deg2rad((90 - lon + 360) % 360)}
-  function signOf(lon){ const s=["Aries","Tauro","Géminis","Cáncer","Leo","Virgo","Libra","Escorpio","Sagitario","Capricornio","Acuario","Piscis"]; return s[Math.floor(((lon%360)+360)%360/30)]; }
+  function signOf(lon){
+    const s=["Aries","Tauro","Géminis","Cáncer","Leo","Virgo","Libra","Escorpio","Sagitario","Capricornio","Acuario","Piscis"];
+    return s[Math.floor(norm360(lon)/30)];
+  }
   function parseTZ(tz){ const m=/([+-])(\d{2}):(\d{2})/.exec(tz||'-03:00'); if(!m) return -3; const s=m[1]==='-'?-1:1; return s*(+m[2]+(+m[3]/60)); }
   function buildDate(day,month,year,hour,minute,tz){ const tzH=parseTZ(tz); return new Date(Date.UTC(+year, +month-1, +day, +hour - tzH, +minute)); }
+  function houseOf(lon, asc){ const d=norm360(lon - asc); return Math.floor(d/30)+1; }
 
-  // ✅ FIX: usar GeoVector + Ecliptic (A.EclipticGeo NO existe en el bundle browser)
+  // Ascendente (estimación robusta por búsqueda sobre la eclíptica)
+  async function estimateAscendant(date, latDeg, lonDeg){
+    const obliq = deg2rad(23.4392911);
+    const gst = A.SiderealTime(date) * 15 * Math.PI/180;   // rad
+    const lst = gst + deg2rad(lonDeg);
+    const lat = deg2rad(latDeg);
+    let bestLon=0, bestScore=1e9;
+    for(let lon=0; lon<360; lon+=0.25){
+      const L = deg2rad(lon);
+      const x = Math.cos(L), y = Math.sin(L)*Math.cos(obliq), z = Math.sin(L)*Math.sin(obliq);
+      const ra = Math.atan2(y, x);
+      const dec = Math.asin(z);
+      const ha = (lst - ra + 2*Math.PI)%(2*Math.PI);
+      const sinAlt = Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(ha);
+      const alt = Math.asin(sinAlt);
+      const cosAz = (Math.sin(dec)-Math.sin(lat)*sinAlt)/(Math.cos(lat)*Math.cos(alt)+1e-9);
+      let az = Math.acos(Math.max(-1,Math.min(1,cosAz)));
+      if(Math.sin(ha)>0) az = 2*Math.PI - az; // 0..2π
+      const score = Math.abs(rad2deg(alt)) + Math.abs(rad2deg(az)-90);
+      if(score<bestScore){bestScore=score; bestLon=lon;}
+    }
+    return bestLon;
+  }
+
+  // Longitudes eclípticas (bundle browser: GeoVector + Ecliptic)
   async function computeLongitudes(date){
-    const A = window.Astronomy;
     const bodies=['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto'];
     const res={};
     for(const b of bodies){
-      const vec = A.GeoVector(A.Body[b], date, true); // vector geocéntrico
-      const ecl = A.Ecliptic(vec);                     // -> {elon, elat}
-      res[b] = (rad2deg(ecl.elon)+360)%360;
+      const vec = A.GeoVector(A.Body[b], date, true);
+      const ecl = A.Ecliptic(vec);
+      res[b] = norm360(rad2deg(ecl.elon));
     }
     return res;
   }
 
-  function drawWheel(ctx,w,h,longs){
+  // ====== Textos por signo (todos los planetas) ======
+  const TEXTS = {
+    Sun:{Aries:"Energía pionera, iniciativa y coraje. Aprende a sostener procesos.",
+      Tauro:"Constancia, sentido práctico y disfrute. Evitar rigidez y apegos.",
+      Géminis:"Curiosidad, mente rápida y versatilidad. Profundizar trae balance.",
+      Cáncer:"Sensibilidad y protección. Abrir el corazón sin coraza excesiva.",
+      Leo:"Brillo, creatividad y generosidad. Liderar con el corazón, no con el ego.",
+      Virgo:"Servicio y mejora continua. Soltar perfeccionismo da paz.",
+      Libra:"Armonía y justicia en vínculos. Decidir desde adentro fortalece.",
+      Escorpio:"Intensidad y transformación. Confiar en los procesos de cambio.",
+      Sagitario:"Expansión y búsqueda de sentido. Libertad con responsabilidad.",
+      Capricornio:"Estructura, ambición y perseverancia. Cuidar la vida interna.",
+      Acuario:"Originalidad y visión social. Aterrizar ideas para que sucedan.",
+      Piscis:"Empatía y espiritualidad. Límites sanos cuidan la sensibilidad."},
+    Moon:{Aries:"Reacciona rápido; necesita movimiento. Canalizar la impaciencia.",
+      Tauro:"Busca estabilidad y placer sensorial; soltar apegos libera.",
+      Géminis:"Necesita variedad y diálogo; bajar a tierra emociones.",
+      Cáncer:"Refugio emocional y familia; cuidar susceptibilidad.",
+      Leo:"Calidez y expresividad; brilla al jugar y crear.",
+      Virgo:"Orden y utilidad; suavizar la autocrítica.",
+      Libra:"Armonía en el vínculo; decidir desde adentro.",
+      Escorpio:"Emociones profundas; la confianza transforma.",
+      Sagitario:"Busca sentido y aventura; evitar fuga emocional.",
+      Capricornio:"Autocontrol y responsabilidad; habilitar ternura.",
+      Acuario:"Independencia y visión; integrar cercanía afectiva.",
+      Piscis:"Compasión y fantasía; límites claros protegen."},
+    Mercury:{Aries:"Pensamiento directo y veloz; sumar escucha.",
+      Tauro:"Práctico y concreto; abrirse a lo nuevo.",
+      Géminis:"Ágil y curioso; priorizar foco.",
+      Cáncer:"Memoria emocional; cuidar susceptibilidad.",
+      Leo:"Comunicación creativa; evitar dramatizar.",
+      Virgo:"Análisis y detalle; soltar perfeccionismo.",
+      Libra:"Diplomacia y equilibrio; decidir a tiempo.",
+      Escorpio:"Profundidad y estrategia; sin manipular.",
+      Sagitario:"Visión amplia; chequear datos.",
+      Capricornio:"Orden y planificación; suavizar rigidez.",
+      Acuario:"Originalidad; bajar a plan concreto.",
+      Piscis:"Intuitivo y poético; clarificar mensajes."},
+    Venus:{Aries:"Ama con impulso e independencia.",
+      Tauro:"Afecto estable y sensorial.",
+      Géminis:"Coquetería mental, variedad y juego.",
+      Cáncer:"Cuidado y apego; refugio afectivo.",
+      Leo:"Romance teatral y generoso.",
+      Virgo:"Detallista y servicial; exigente.",
+      Libra:"Armónica y diplomática; busca pareja.",
+      Escorpio:"Intensa y transformadora; profundidad.",
+      Sagitario:"Libre, aventurera y sincera.",
+      Capricornio:"Compromiso y lealtad a largo plazo.",
+      Acuario:"Amor libre y amistoso.",
+      Piscis:"Romántica, compasiva y soñadora."},
+    Mars:{Aries:"Acción directa; coraje. Cuidar impulsividad.",
+      Tauro:"Constante y resistente; puede demorar en arrancar.",
+      Géminis:"Multitarea; dispersión posible.",
+      Cáncer:"Protege a los suyos; gestiona enojo con cuidado.",
+      Leo:"Acción creativa y orgullosa.",
+      Virgo:"Eficiencia y servicio; evita sobreexigencia.",
+      Libra:"Acción diplomática; decide y avanza.",
+      Escorpio:"Fuerza estratégica e intensa.",
+      Sagitario:"Acción expansiva y franca.",
+      Capricornio:"Disciplina y logro sostenido.",
+      Acuario:"Acción innovadora y rebelde.",
+      Piscis:"Acciona con intuición; evitar evasión."},
+    Jupiter:{Aries:"Crece liderando y emprendiendo.",
+      Tauro:"Prospera con constancia y recursos reales.",
+      Géminis:"Expansión por conocimiento y redes.",
+      Cáncer:"Protección y generosidad; familia.",
+      Leo:"Confianza y creatividad; guiar inspira.",
+      Virgo:"Servicio útil; orden y salud.",
+      Libra:"Justicia y acuerdos; diplomacia.",
+      Escorpio:"Profundidad y transformación.",
+      Sagitario:"Filosofía, viajes y sentido.",
+      Capricornio:"Ética del trabajo; metas claras.",
+      Acuario:"Visión social y progreso.",
+      Piscis:"Compasión y espiritualidad."},
+    Saturn:{Aries:"Lección de paciencia y estrategia.",
+      Tauro:"Constancia y valor propio; no aferrarse.",
+      Géminis:"Responsabilidad en la palabra.",
+      Cáncer:"Madurar lo emocional y lo familiar.",
+      Leo:"Autoestima madura; brillo responsable.",
+      Virgo:"Deber, salud y servicio.",
+      Libra:"Compromisos justos y duraderos.",
+      Escorpio:"Poder bien administrado.",
+      Sagitario:"Disciplina en creencias y estudios.",
+      Capricornio:"Maestría, estructura y autoridad.",
+      Acuario:"Responsabilidad social e innovación.",
+      Piscis:"Compasión con límites; espiritualidad práctica."},
+    Uranus:{Aries:"Independencia súbita; pionero.",
+      Tauro:"Cambios en valores/recursos.",
+      Géminis:"Ideas brillantes y disruptivas.",
+      Cáncer:"Nuevas formas de hogar/pertenencia.",
+      Leo:"Creatividad rebelde.",
+      Virgo:"Innovación en trabajo y salud.",
+      Libra:"Vínculos no convencionales.",
+      Escorpio:"Transformaciones radicales.",
+      Sagitario:"Libertad filosófica y viajes.",
+      Capricornio:"Estructuras nuevas.",
+      Acuario:"Genialidad y redes.",
+      Piscis:"Despertar intuitivo."},
+    Neptune:{Aries:"Impulso inspirado; canalizar idealismo.",
+      Tauro:"Belleza de lo simple; evitar confusión material.",
+      Géminis:"Imaginación mental; cuidar dispersión.",
+      Cáncer:"Hipersensibilidad; nutrir límites.",
+      Leo:"Arte y corazón; no idealizar ego.",
+      Virgo:"Servicio compasivo; ordenarse.",
+      Libra:"Idealismo romántico; discernir.",
+      Escorpio:"Misterio y sanación profunda.",
+      Sagitario:"Fe y sentido; cuidar evasión.",
+      Capricornio:"Soñar con lo posible; hacerlo real.",
+      Acuario:"Utopías y comunidad.",
+      Piscis:"Inspiración pura; cuidar energía."},
+    Pluto:{Aries:"Renacer del yo y la voluntad.",
+      Tauro:"Transformación de valores y posesiones.",
+      Géminis:"Cambio profundo en ideas y comunicación.",
+      Cáncer:"Sanación de raíces emocionales.",
+      Leo:"Poder creativo y expresión intensa.",
+      Virgo:"Purga y perfeccionamiento.",
+      Libra:"Vínculos kármicos; justicia profunda.",
+      Escorpio:"Alquimia total; resiliencia.",
+      Sagitario:"Verdad, creencias y sentido en mutación.",
+      Capricornio:"Estructuras y poder social.",
+      Acuario:"Colectivo y cambios sistémicos.",
+      Piscis:"Espiritualidad y disolución del ego."}
+  };
+
+  // Textos por casa (genéricos para cualquier planeta)
+  const HOUSES = {
+    1:"Impulso personal, identidad y comienzo de ciclos.",
+    2:"Recursos, valor propio y estabilidad material/energética.",
+    3:"Comunicación, estudio, entorno cercano y hermanos.",
+    4:"Hogar, raíces, familia y mundo emocional íntimo.",
+    5:"Creatividad, juego, romances y expresión auténtica.",
+    6:"Rutina, trabajo, servicio y salud.",
+    7:"Pareja, asociaciones y espejos del yo.",
+    8:"Transformación, intimidad, recursos compartidos.",
+    9:"Filosofía, viajes, religión/espiritualidad y estudios.",
+    10:"Vocación, imagen pública y metas.",
+    11:"Amistades, redes y proyectos colectivos.",
+    12:"Cierre de ciclos, inconsciente, retiro y espiritualidad."
+  };
+
+  // ====== Dibujo de rueda y casas ======
+  function drawWheel(ctx,w,h,longs,asc){
     const cx=w/2,cy=h/2,R=w*0.42,rPlan=R*0.88;
     ctx.clearRect(0,0,w,h);
     // disco
     ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();ctx.strokeStyle="#e6cfe1";ctx.stroke();
+
     // signos + divisiones
     const signs=["Aries","Tauro","Géminis","Cáncer","Leo","Virgo","Libra","Escorpio","Sagitario","Capricornio","Acuario","Piscis"];
     ctx.font="600 12px system-ui";ctx.fillStyle="#2d1b2d";
@@ -196,29 +376,71 @@ window.addEventListener('load', () => {
       ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(d)*R, cy+Math.sin(d)*R);
       ctx.strokeStyle="#ead6ef";ctx.lineWidth=1;ctx.stroke();
     }
-    // aspectos simples (rojo=90/180, verde=60/120)
-    const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇"};
+
+    // casas iguales desde ASC
+    if(Number.isFinite(asc)){
+      ctx.save(); ctx.translate(cx,cy);
+      for(let i=0;i<12;i++){
+        const lon = norm360(asc + i*30);
+        const ang=eclLonToAngle(lon);
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(ang)*R*0.96, Math.sin(ang)*R*0.96);
+        ctx.strokeStyle="#c7a1d8"; ctx.lineWidth=2; ctx.stroke();
+        // número casa
+        const mid = norm360(asc + i*30 + 15); const am=eclLonToAngle(mid);
+        const rx = Math.cos(am)*R*0.65, ry=Math.sin(am)*R*0.65;
+        ctx.fillStyle="#9b5de5"; ctx.font="bold 16px Inter";
+        ctx.fillText(String(i+1), cx+rx, cy+ry);
+      }
+      // marcar ASC
+      const ang=eclLonToAngle(asc);
+      ctx.strokeStyle="#9b5de5"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(ang)*R, Math.sin(ang)*R); ctx.stroke();
+      ctx.restore();
+    }
+
+    // aspectos (rojo=90/180, verde=60/120; orbe 4°)
     const keys=Object.keys(longs);
-    function aspectColor(d){d=Math.min(d,360-d); if(Math.abs(d-180)<=4||Math.abs(d-90)<=4) return '#e63946'; if(Math.abs(d-120)<=4||Math.abs(d-60)<=4) return '#2a9d8f'; return null;}
+    function aspectColor(d){d=Math.min(d,360-d);
+      if(Math.abs(d-180)<=4||Math.abs(d-90)<=4) return "#e63946";
+      if(Math.abs(d-120)<=4||Math.abs(d-60)<=4) return "#2a9d8f";
+      return null;
+    }
     ctx.lineWidth=1.4;
     for(let i=0;i<keys.length;i++){
       for(let j=i+1;j<keys.length;j++){
-        const a=longs[keys[i]], b=longs[keys[j]]; const col=aspectColor(Math.abs(a-b)); if(!col) continue;
+        const a=longs[keys[i]], b=longs[keys[j]];
+        const col=aspectColor(Math.abs(a-b)); if(!col) continue;
         const angA=eclLonToAngle(a), angB=eclLonToAngle(b);
         const x1=cx+Math.cos(angA)*rPlan, y1=cy+Math.sin(angA)*rPlan;
         const x2=cx+Math.cos(angB)*rPlan, y2=cy+Math.sin(angB)*rPlan;
         ctx.strokeStyle=col; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
       }
     }
+
     // planetas
+    const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇"};
     ctx.font='20px serif'; ctx.fillStyle='#1f1142';
     for(const k of keys){
-      const ang=eclLonToAngle(longs[k]); const x=cx+Math.cos(ang)*rPlan, y=cy+Math.sin(ang)*rPlan;
+      const ang=eclLonToAngle(longs[k]);
+      const x=cx+Math.cos(ang)*rPlan, y=cy+Math.sin(ang)*rPlan;
       ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill(); ctx.strokeStyle="#cdb0df"; ctx.stroke();
       ctx.fillStyle="#1f1142"; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(glyphs[k]||k[0], x, y);
     }
   }
 
+  // ===== Informe HTML =====
+  function planetParagraph(name, lon, asc){
+    const sign = signOf(lon);
+    const house = Number.isFinite(asc) ? houseOf(lon, asc) : null;
+    const textSign = (TEXTS[name] && TEXTS[name][sign]) ? TEXTS[name][sign] : `${name} en ${sign}.`;
+    const textHouse = house ? ` Casa ${house}: ${HOUSES[house]}` : "";
+    const nice = ({
+      Sun:"Sol", Moon:"Luna", Mercury:"Mercurio", Venus:"Venus", Mars:"Marte",
+      Jupiter:"Júpiter", Saturn:"Saturno", Uranus:"Urano", Neptune:"Neptuno", Pluto:"Plutón"
+    })[name] || name;
+    return `<p><b>${nice}</b> en <b>${sign}</b>${house?` (Casa ${house})`:''}: ${textSign}${house?` — ${HOUSES[house]}`:''}</p>`;
+  }
+
+  // ===== Render principal =====
   async function renderAll(){
     try{
       if(!window.Astronomy){ show('La librería astronómica no cargó. Refrescá con Ctrl+F5.'); return; }
@@ -232,40 +454,84 @@ window.addEventListener('load', () => {
       const city=document.getElementById('city').value||'Mar del Plata';
       const country=document.getElementById('country').value||'Argentina';
       const name=(document.getElementById('name').value||'Consultante').trim();
+      const lat=parseFloat(document.getElementById('lat').value||-38.0);
+      const lon=parseFloat(document.getElementById('lon').value||-57.56);
 
       const date = buildDate(day,month,year,hour,minute,tz);
       const longs = await computeLongitudes(date);
+      const asc = await estimateAscendant(date, lat, lon);
 
       const canvas=document.getElementById('wheel');
-      drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs);
+      drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs, asc);
 
-      const dd=`${day}/${month}/${year}`; const tt=`${hour}:${minute}`;
-      document.getElementById('report').innerHTML = `<b>${name}</b><br/>Sol en ${signOf(longs.Sun)} · Luna en ${signOf(longs.Moon)}<br/>${dd} ${tt} – ${city}, ${country}`;
+      const dd=`${day}/${month}/${year}`, tt=`${hour}:${minute}`, place=`${city}, ${country}`;
+
+      // Construir informe
+      let html = `<h3 style="margin:.2em 0">${name}</h3>
+      <div><b>Datos:</b> ${dd} · ${tt} · ${place}</div>
+      <hr class="hr"/>`;
+
+      const order = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"];
+      for(const k of order){ html += planetParagraph(k, longs[k], asc); }
+
+      html += `<p class="hint">Texto auto-generado por signo y casa (casas iguales desde el Ascendente estimado). Para uso profesional, podés ajustar sistema de casas y ampliar interpretaciones.</p>`;
+
+      document.getElementById('report').innerHTML = html;
+
+      // Preparar export a Word (HTML + imagen del canvas)
+      const imgData = canvas.toDataURL('image/png');
+      const exportHTML = `
+        <h1 style="font-family:Arial">Carta Astral – Sanación 11.11</h1>
+        <div><b>${name}</b> · ${dd} ${tt} – ${place}</div>
+        <img src="${imgData}" style="width:500px;height:auto;margin:12px 0"/>
+        ${html}
+      `;
+      document.getElementById('exportArea').innerHTML = exportHTML;
+
     }catch(err){ console.error(err); show('Error al generar la carta. Abrí la consola (F12) y pasame el mensaje.'); }
   }
 
+  // ===== Exportar PDF / DOCX =====
   async function downloadPDF(){
     try{
       const {jsPDF}=window.jspdf; const pdf=new jsPDF({unit:'pt',format:'a4'});
       pdf.setFillColor(255,230,240); pdf.rect(0,0,pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(),'F');
       pdf.setTextColor(45,27,45); pdf.setFont('helvetica','bold'); pdf.setFontSize(18);
       pdf.text('Carta Astral – Sanación 11.11',40,40);
+
       const canvas=document.getElementById('wheel'); const img=canvas.toDataURL('image/png');
       const pageW=pdf.internal.pageSize.getWidth()-80; const ratio=pageW/canvas.width; const imgH=canvas.height*ratio;
       pdf.addImage(img,'PNG',40,60,pageW,imgH);
-      const rep=document.getElementById('report'); const text=rep.innerText||rep.textContent||'';
+
+      const rep=document.getElementById('report'); const textHTML=rep.innerText||rep.textContent||'';
       pdf.setFont('helvetica','normal'); pdf.setFontSize(12);
-      const lines=pdf.splitTextToSize(text, pageW); let y=80+imgH;
+      const lines=pdf.splitTextToSize(textHTML, pageW); let y=80+imgH;
       if(y+lines.length*14>pdf.internal.pageSize.getHeight()-60){ pdf.addPage(); pdf.setFillColor(255,230,240); pdf.rect(0,0,pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(),'F'); y=60; }
       pdf.text(lines,40,y); pdf.save('Carta_Astral.pdf');
     }catch(err){ console.error(err); show('No se pudo generar el PDF. Revisá la consola (F12).'); }
   }
 
+  async function downloadDocx(){
+    try{
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:Arial">${document.getElementById('exportArea').innerHTML}</body></html>`;
+      const blob = window.htmlDocx.asBlob(html, {orientation:'portrait'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'Carta_Astral.docx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    }catch(err){ console.error(err); show('No se pudo generar el Word. Revisá la consola (F12).'); }
+  }
+
+  // Eventos
   document.getElementById('btnRender').addEventListener('click', renderAll);
   document.getElementById('btnPdf').addEventListener('click', downloadPDF);
-  // Render inicial demo
+  document.getElementById('btnDocx').addEventListener('click', downloadDocx);
+
+  // Render demo inicial
   renderAll();
 });
 </script>
 </body>
 </html>
+
