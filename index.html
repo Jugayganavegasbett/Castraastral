@@ -39,6 +39,7 @@
     .alert{background:#fff3cd;color:#7f5f00;border:1px solid #ffe69c;padding:10px;border-radius:10px;margin:0 0 12px;display:none}
     .ok{background:#e9f9ef;color:#0f5132;border:1px solid #a3e4c0}
     hr.hr{border:none;border-top:1px solid #e6cfe1;margin:12px 0}
+    .debug{margin:10px 0;padding:8px;border:1px dashed #cfa9d9;border-radius:8px;background:#fff;}
   </style>
 </head>
 <body>
@@ -125,6 +126,16 @@
           </div>
         </div>
 
+        <div class="row">
+          <div>
+            <label>Zodíaco</label>
+            <select id="zodiac">
+              <option value="tropical">Tropical (occidental)</option>
+              <option value="sidereal_lahiri">Sideral – Lahiri</option>
+            </select>
+          </div>
+        </div>
+
         <p class="hint">Tip: si no sabés lat/lon, dejá los valores por defecto. Argentina: zona horaria <b>-03:00</b>.</p>
       </section>
 
@@ -164,7 +175,7 @@ window.addEventListener('load', () => {
   const minSel = document.getElementById('minute');
   for(let m=0; m<60; m+=1){ const o=document.createElement('option'); o.value=o.textContent=String(m).padStart(2,'0'); minSel.appendChild(o); }
 
-  // Valores demo
+  // Valores demo (Facundo)
   daySel.value='14'; document.getElementById('month').value='12'; yearSel.value='1986';
   hourSel.value='01'; minSel.value='10';
   document.getElementById('city').value='Mar del Plata';
@@ -190,6 +201,12 @@ window.addEventListener('load', () => {
   }
   function parseTZ(tz){ const m=/([+-])(\d{2}):(\d{2})/.exec(tz||'-03:00'); if(!m) return -3; const s=m[1]==='-'?-1:1; return s*(+m[2]+(+m[3]/60)); }
   function buildDate(day,month,year,hour,minute,tz){ const tzH=parseTZ(tz); return new Date(Date.UTC(+year, +month-1, +day, +hour - tzH, +minute)); }
+
+  // Ayanamsha Lahiri (aprox.) válida 1900–2100 (para signo es suficiente)
+  function ayanamshaLahiriDeg(date){
+    const y = date.getUTCFullYear() + (date.getUTCMonth()+1-0.5)/12;
+    return 23.852 + 0.014 * (y - 2000);
+  }
 
   // Sistemas de casas
   function houseOf(lon, asc, system='equal'){
@@ -227,14 +244,18 @@ window.addEventListener('load', () => {
     return bestLon;
   }
 
-  // Longitudes eclípticas (bundle browser: GeoVector + Ecliptic)
-  async function computeLongitudes(date){
+  // Longitudes eclípticas (tropical) + conversión a sideral si corresponde
+  async function computeLongitudes(date, zodiac='tropical'){
     const bodies=['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto'];
     const res={};
     for(const b of bodies){
       const vec = A.GeoVector(A.Body[b], date, true);
       const ecl = A.Ecliptic(vec);
       res[b] = norm360(rad2deg(ecl.elon));
+    }
+    if (zodiac === 'sidereal_lahiri') {
+      const ayan = ayanamshaLahiriDeg(date);
+      for(const k of bodies){ res[k] = norm360(res[k] - ayan); }
     }
     return res;
   }
@@ -464,6 +485,15 @@ window.addEventListener('load', () => {
     return `<p><b>${nice}</b> en <b>${sign}</b>${house?` (Casa ${house})`:''}: ${textSign}${house?` — ${HOUSES[house]}`:''}</p>`;
   }
 
+  // helper grados con signo
+  function fmtLon(lon){
+    const s = signOf(lon);
+    const L = ((lon % 360) + 360) % 360;
+    const deg = Math.floor(L % 30);
+    const min = Math.floor(((L % 1) * 60 + 60) % 60);
+    return `${s} ${deg}°${String(min).padStart(2,'0')}'`;
+  }
+
   // ===== Render principal =====
   async function renderAll(){
     try{
@@ -481,19 +511,23 @@ window.addEventListener('load', () => {
       const lat=parseFloat(document.getElementById('lat').value||-38.0);
       const lon=parseFloat(document.getElementById('lon').value||-57.56);
       const system=document.getElementById('houseSystem').value;
+      const zodiac=document.getElementById('zodiac').value;
 
       const date = buildDate(day,month,year,hour,minute,tz);
-      const longs = await computeLongitudes(date);
+      const longs = await computeLongitudes(date, zodiac);
       const asc = await estimateAscendant(date, lat, lon);
 
       const canvas=document.getElementById('wheel');
       drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs, asc, system);
 
       const dd=`${day}/${month}/${year}`, tt=`${hour}:${minute}`, place=`${city}, ${country}`;
+      const zodiacLabel = (zodiac === 'sidereal_lahiri') ? 'Sideral – Lahiri' : 'Tropical';
+      const casasLabel = (system === 'whole') ? 'Whole Sign' : 'Iguales';
 
       // Construir informe + aviso profesional
       let html = `<h3 style="margin:.2em 0">${name}</h3>
       <div><b>Datos:</b> ${dd} · ${tt} · ${place}</div>
+      <div class="hint">Zodíaco: ${zodiacLabel} · Casas: ${casasLabel}</div>
       <hr class="hr"/>`;
 
       const order = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"];
@@ -501,16 +535,26 @@ window.addEventListener('load', () => {
 
       html += `<p class="hint"><strong>Aviso profesional:</strong> La presente carta astral ha sido calculada a partir de los <u>datos exactos de nacimiento</u> (fecha, hora y lugar) proporcionados, empleando efemérides astronómicas y el sistema seleccionado de casas. Su contenido es interpretativo y orientativo; no sustituye asesoramiento médico, psicológico, financiero ni legal. <em>Documento confidencial, para uso exclusivo del/la consultante.</em></p>`;
 
-      document.getElementById('report').innerHTML = html;
+      // Bloque de verificación técnica
+      const debugBox = `
+        <div class="debug">
+          <b>Verificación técnica</b><br>
+          UTC usado: ${date.toISOString()}<br>
+          Sol: ${fmtLon(longs.Sun)} &nbsp;|&nbsp; Luna: ${fmtLon(longs.Moon)}
+        </div>
+      `;
+
+      document.getElementById('report').innerHTML = debugBox + html;
 
       // Preparar export a Word (HTML + imagen del canvas)
       const imgData = canvas.toDataURL('image/png');
       const exportHTML = `
         <h1 style="font-family:Arial">Carta Astral – Sanación 11.11</h1>
         <div><b>${name}</b> · ${dd} ${tt} – ${place}</div>
-        <div style="margin:10px 0"><small>Sistema de casas: ${system === 'whole' ? 'Whole Sign' : 'Iguales'}</small></div>
+        <div style="margin:10px 0"><small>Zodíaco: ${zodiacLabel} · Sistema de casas: ${casasLabel}</small></div>
         <img src="${imgData}" style="width:500px;height:auto;margin:12px 0"/>
         ${html}
+        <div style="margin-top:8px;font-size:11px;color:#666">${debugBox}</div>
       `;
       document.getElementById('exportArea').innerHTML = exportHTML;
 
@@ -583,4 +627,3 @@ window.addEventListener('load', () => {
 </script>
 </body>
 </html>
-
