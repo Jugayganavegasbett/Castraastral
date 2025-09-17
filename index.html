@@ -477,7 +477,7 @@ window.addEventListener('load', () => {
       const order = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"];
       for(const k of order){ html += planetParagraph(k, longs[k], asc); }
 
-      html += `<p class="hint">Texto auto-generado por signo y casa (casas iguales desde el Ascendente estimado). Para uso profesional, podés ajustar sistema de casas y ampliar interpretaciones.</p>`;
+      html += `<p class="hint"><strong>Aviso profesional:</strong> La carta astral se ha calculado en base a la <u>fecha, hora y lugar exactos de nacimiento</u> proporcionados, empleando efemérides astronómicas y el sistema de Casas Iguales desde el Ascendente. El contenido es interpretativo y no sustituye asesoramiento médico, psicológico, financiero ni legal. <em>Documento confidencial, para uso exclusivo del/la consultante.</em></p>`;
 
       document.getElementById('report').innerHTML = html;
 
