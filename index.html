@@ -3,33 +3,36 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Carta Astral – Sanación 11.11</title>
+<title>Carta Astral – Sanación 11.11 (Swiss Ephemeris)</title>
 
-<!-- Librerías -->
+<!-- Librerías base -->
 <script defer src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.browser.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.4.1/html-docx.min.js"></script>
 <script defer src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
 
+<!-- Swiss Ephemeris (WASM) – se carga desde CDN; si falla, hay fallback -->
+<script defer src="https://cdn.jsdelivr.net/npm/swisseph@2.10.4/dist/sweph.js"></script>
+
 <style>
 :root{--bg:#ffe6f0;--ink:#2d1b2d;--muted:#6a4c6a;--card:#ffffffcc;--accent:#9b5de5}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-.wrap{max-width:1080px;margin:32px auto;padding:0 16px}
+.wrap{max-width:1180px;margin:32px auto;padding:0 16px}
 header{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:16px}
 h1{font-size:clamp(20px,3vw,28px);margin:0}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 .card{background:var(--card);padding:16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
 .grid{display:grid;gap:16px}
-@media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
+@media(min-width:1100px){.grid{grid-template-columns:440px 1fr}}
 label{font-size:12px;color:var(--muted);margin:10px 0 6px;display:block}
 input,select{width:100%;padding:10px;border:1px solid #e6cfe1;border-radius:10px;background:#fff;color:var(--ink)}
+input[type="number"]{appearance:textfield}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 button{background:var(--accent);color:#fff;border:0;padding:12px 16px;border-radius:12px;font-weight:700;cursor:pointer}
 button.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
-.toggle{display:flex;gap:8px;align-items:center}
 canvas{max-width:100%;height:auto;background:#fff;border-radius:12px}
 footer{margin:24px 0;font-size:12px;color:var(--muted);text-align:center}
 .hint{font-size:12px;color:var(--muted)}
@@ -43,21 +46,23 @@ ul.aspects li{margin:3px 0}
 .badge.red{background:#ffe0e0;color:#b00020}
 .badge.blue{background:#e0ecff;color:#1a4c9c}
 .badge.green{background:#e0f5ef;color:#087f5b}
+.table{width:100%;border-collapse:separate;border-spacing:0 6px}
+.table th{font-size:12px;text-transform:uppercase;color:#6a4c6a;text-align:left}
+.box{background:#fff;border:1px solid #e6cfe1;border-radius:12px;padding:10px}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#f3e9fb;color:#5c3ca1;font-weight:600;font-size:12px}
+.flex{display:flex;gap:16px;flex-wrap:wrap}
+.flex > .box{flex:1 1 300px}
 #refImg{max-width:100%;margin-top:10px;display:none;border-radius:12px;background:#fff}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>✨ Generador de Carta Astral</h1>
+    <h1>✨ Carta Astral (Swiss Ephemeris)</h1>
     <div class="actions">
       <button id="btnRender" class="secondary">Generar carta</button>
       <button id="btnPdf">Descargar PDF</button>
       <button id="btnDocx">Descargar Word</button>
-      <label class="toggle">
-        <input type="checkbox" id="cnMode"/>
-        <span>Modo CN.es (Tropical+Placidus+orbes)</span>
-      </label>
     </div>
   </header>
 
@@ -92,8 +97,8 @@ ul.aspects li{margin:3px 0}
       </div>
 
       <div class="row">
-        <div><label>Latitud (decimal)</label><input id="lat" placeholder="-38.0"/></div>
-        <div><label>Longitud (decimal)</label><input id="lon" placeholder="-57.56"/></div>
+        <div><label>Latitud (decimal)</label><input id="lat" step="0.0001" placeholder="-38.0000"/></div>
+        <div><label>Longitud (decimal)</label><input id="lon" step="0.0001" placeholder="-57.5500"/></div>
       </div>
 
       <div class="row">
@@ -101,49 +106,48 @@ ul.aspects li{margin:3px 0}
         <div><label>Corrección nacimiento (± minutos)</label><input id="deltaMin" type="number" value="0" step="1"/></div>
       </div>
 
-      <div class="row">
-        <div>
-          <label>Sistema de casas</label>
-          <select id="houseSystem">
-            <option value="placidus" selected>Placidus</option>
-            <option value="porphyry">Porphyry</option>
-            <option value="whole">Whole Sign</option>
-            <option value="equal">Iguales</option>
-          </select>
-        </div>
-        <div>
-          <label>Zodíaco</label>
-          <select id="zodiac">
-            <option value="tropical" selected>Tropical</option>
-            <option value="sidereal_lahiri">Sideral – Lahiri</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Imagen de referencia -->
+      <!-- Imagen de referencia opcional -->
       <div class="row">
         <div>
           <label>Imagen de referencia (subir)</label>
           <input id="imgUpload" type="file" accept="image/*"/>
         </div>
         <div>
-          <label>…o URL de imagen (opcional)</label>
+          <label>…o URL de imagen</label>
           <input id="imgUrl" placeholder="https://sitio/miimagen.png"/>
         </div>
       </div>
 
-      <p class="hint">Tip: Argentina usa <b>-03:00</b>. Si no sabés lat/lon, dejá los valores por defecto.</p>
+      <p class="hint"><b>Tropical + Placidus</b> por defecto (igual que carta-natal.es). 1° de Asc ≈ 4 min.</p>
     </section>
 
     <!-- Mapa + preview -->
     <section class="card">
-      <canvas id="wheel" width="880" height="880"></canvas>
+      <canvas id="wheel" width="900" height="900"></canvas>
       <img id="refImg" alt="Imagen de referencia"/>
-      <p class="hint">Rueda moderna con Placidus y aspectos (rojo tensión, azul trígono, verde sextil).</p>
+      <p class="hint">Rueda con Placidus y aspectos (rojo tensión, azul trígono, verde sextil).</p>
     </section>
   </div>
 
+  <!-- Paneles tipo CN: posiciones, cúspides, aspectos -->
   <section class="card" style="margin-top:16px">
+    <div class="flex">
+      <div class="box">
+        <div class="pill">Posiciones & Casas</div>
+        <table class="table" id="tblPositions"></table>
+      </div>
+      <div class="box">
+        <div class="pill">Cúspides Placidus</div>
+        <table class="table" id="tblCusps"></table>
+      </div>
+      <div class="box">
+        <div class="pill">Aspectos</div>
+        <table class="table" id="tblAspects"></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
     <div id="report" class="hint">Completá los datos y presioná <b>Generar carta</b>.</div>
   </section>
 
@@ -169,14 +173,14 @@ window.addEventListener('load', () => {
   const minSel = document.getElementById('minute');
   for(let m=0; m<60; m++){ const o=document.createElement('option'); o.value=o.textContent=String(m).padStart(2,'0'); minSel.appendChild(o); }
 
-  // Demo (Facundo)
+  // Demo inicial (Facundo)
   daySel.value='14'; document.getElementById('month').value='12'; yearSel.value='1986';
   hourSel.value='01'; minSel.value='10';
   document.getElementById('city').value='Mar del Plata';
   document.getElementById('country').value='Argentina';
   document.getElementById('tz').value='-03:00';
-  document.getElementById('lat').value='-38.0';
-  document.getElementById('lon').value='-57.56';
+  document.getElementById('lat').value='-38.0000';
+  document.getElementById('lon').value='-57.5500';
 
   // ===== Utilidades =====
   function deg2rad(d){return d*Math.PI/180}
@@ -188,14 +192,52 @@ window.addEventListener('load', () => {
   function buildDate(day,month,year,hour,minute,tz){ const tzH=parseTZ(tz); return new Date(Date.UTC(+year, +month-1, +day, +hour - tzH, +minute)); }
   const obliq = deg2rad(23.4392911);
 
-  // Ayanamsha Lahiri (aprox para signos)
-  function ayanamshaLahiriDeg(date){
-    const y = date.getUTCFullYear() + (date.getUTCMonth()+1-0.5)/12;
-    return 23.852 + 0.014 * (y - 2000);
-  }
+  // ========== Swiss Ephemeris loader ==========
+  let SWE = null;           // objeto swisseph (si carga)
+  let SWE_READY = false;    // bandera de disponibilidad
 
-  // Longitudes planetarias (tropical; si sideral resta ayanamsha)
-  async function computeLongitudes(date, zodiac='tropical'){
+  async function loadSwiss(){
+    // Espera pasiva a que el script cree window.swisseph
+    for(let i=0;i<60;i++){ // ~3s
+      if (window.swisseph && window.swisseph.swe_calc_ut){ SWE = window.swisseph; SWE_READY=true; break; }
+      await new Promise(r=>setTimeout(r,50));
+    }
+    if(SWE_READY){
+      try{
+        // Opcional: ruta de .wasm (el CDN lo sirve solo).
+        // Si más adelante lo alojás local, podés indicar:
+        // SWE.Module.locateFile = (p)=> (p.endsWith('.wasm') ? './sewasm.wasm' : p);
+        show('Swiss Ephemeris activo ✅', true); setTimeout(hide,1200);
+      }catch(e){ console.warn(e); }
+    }else{
+      show('No se pudo activar Swiss Ephemeris. Usaré el motor astronómico como respaldo.', false);
+      setTimeout(hide,2000);
+    }
+  }
+  loadSwiss();
+
+  // ========== Cálculo de longitudes ==========
+  async function computeLongitudes(date){
+    if (SWE_READY && SWE){
+      // Swiss: longitudes eclípticas geocéntricas (tropical)
+      const y=date.getUTCFullYear(), mo=date.getUTCMonth()+1, d=date.getUTCDate();
+      const ut = date.getUTCHours() + date.getUTCMinutes()/60 + date.getUTCSeconds()/3600;
+      const jd = SWE.swe_julday(y,mo,d,ut,SWE.SE_GREG_CAL);
+      const flag = SWE.SEFLG_SWIEPH; // eclípticas/tropical por defecto
+      const map = {
+        Sun:SWE.SE_SUN, Moon:SWE.SE_MOON, Mercury:SWE.SE_MERCURY, Venus:SWE.SE_VENUS,
+        Mars:SWE.SE_MARS, Jupiter:SWE.SE_JUPITER, Saturn:SWE.SE_SATURN,
+        Uranus:SWE.SE_URANUS, Neptune:SWE.SE_NEPTUNE, Pluto:SWE.SE_PLUTO
+      };
+      const out={};
+      for(const [k,code] of Object.entries(map)){
+        const r = SWE.swe_calc_ut(jd, code, flag);
+        if (r.error) { throw new Error(r.error); }
+        out[k] = norm360(r.longitude);
+      }
+      return out;
+    }
+    // Fallback: Astronomy-Engine (prácticamente igual, pero no idéntico a Swiss)
     const bodies=['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto'];
     const res={};
     for(const b of bodies){
@@ -203,27 +245,24 @@ window.addEventListener('load', () => {
       const ecl = A.Ecliptic(vec);
       res[b] = norm360(rad2deg(ecl.elon));
     }
-    if (zodiac==='sidereal_lahiri'){ const ay=ayanamshaLahiriDeg(date); for(const k of Object.keys(res)){ res[k]=norm360(res[k]-ay); } }
     return res;
   }
 
   // ===== Nodos y Lilith (mean) =====
   function julianDay(date){ return date.getTime()/86400000 + 2440587.5; }
   function centuriesJ2000(date){ return (julianDay(date) - 2451545.0)/36525.0; }
-  function meanLunarNode(date, zodiac){
+  function meanLunarNode(date){
     const T = centuriesJ2000(date);
     let omega = 125.04455501 - 1934.1361849*T + 0.0020762*T*T + (T*T*T)/467410 - (T*T*T*T)/60616000;
-    if (zodiac==='sidereal_lahiri') omega -= ayanamshaLahiriDeg(date);
     return norm360(omega);
   }
-  function meanLilith(date, zodiac){
+  function meanLilith(date){
     const T = centuriesJ2000(date);
     let L = 83.3532465 + 4069.0137287*T - 0.01032*T*T - (T*T*T)/80053 + (T*T*T*T)/18999000;
-    if (zodiac==='sidereal_lahiri') L -= ayanamshaLahiriDeg(date);
     return norm360(L);
   }
 
-  // ==== ASC/MC exactos y casas Placidus ====
+  // ==== ASC/MC exactos y casas Placidus (geométrico) ====
   function ramcDeg(date, lonDeg){ const lst=A.SiderealTime(date)*15; return norm360(lst + lonDeg); }
   function mcFromRAMC(ramc){ const α=deg2rad(ramc); const λ=Math.atan2(Math.sin(α)/Math.cos(obliq), Math.cos(α)); return norm360(rad2deg(λ)); }
   function ascFromRAMC(latDeg, ramc){
@@ -234,31 +273,23 @@ window.addEventListener('load', () => {
   function eclipticFromRA(raRad){ const x=Math.cos(raRad), y=Math.sin(raRad)/Math.cos(obliq); return norm360(rad2deg(Math.atan2(y,x))); }
   function dsaFromRA(raRad, latDeg){
     const φ=deg2rad(latDeg), v=-Math.sin(raRad)*Math.tan(φ)*Math.tan(obliq);
-    return Math.acos(Math.max(-1,Math.min(1,v))); // rad
+    return Math.acos(Math.max(-1,Math.min(1,v)));
   }
   function iterateRA(ramcDeg, latDeg, f, startDeg, noct=false){
     const ramc=deg2rad(ramcDeg), raic=ramc+Math.PI; let ra=deg2rad(startDeg);
     for(let i=0;i<12;i++){ const dsa=dsaFromRA(ra,latDeg); ra = noct ? (raic - f*dsa) : (ramc + f*dsa); }
     return ra;
   }
-  function getHouseCusps(asc, mc, system, date, latDeg, lonDeg){
-    if(system==='whole'){ const base=Math.floor(norm360(asc)/30)*30; return Array.from({length:12},(_,i)=>norm360(base+i*30)); }
-    if(system==='equal'){ return Array.from({length:12},(_,i)=>norm360(asc+i*30)); }
-    if(system==='placidus'){
-      const RAMC=ramcDeg(date, lonDeg), RAIC=norm360(RAMC+180);
-      const ra12=iterateRA(RAMC,latDeg,1/3,RAMC+60,false), ra11=iterateRA(RAMC,latDeg,2/3,RAMC+30,false);
-      const ra2 =iterateRA(RAMC,latDeg,2/3,RAIC-60,true),  ra3 =iterateRA(RAMC,latDeg,1/3,RAIC-30,true);
-      const c10=mc, c11=eclipticFromRA(ra11), c12=eclipticFromRA(ra12);
-      const c1=asc, c2=eclipticFromRA(ra2), c3=eclipticFromRA(ra3);
-      const c4=norm360(c10+180), c5=norm360(c11+180), c6=norm360(c12+180);
-      const c7=norm360(c1+180),  c8=norm360(c2+180),  c9=norm360(c3+180);
-      return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12];
-    }
-    // Porphyry
-    const dsc=norm360(asc+180), ic=norm360(mc+180);
-    function diff(a,b){return norm360(b-a)}; function div(start,end){const d=diff(start,end);return [start,norm360(start+d/3),norm360(start+2*d/3),norm360(start+d)]}
-    const q1=div(asc,mc), q2=div(mc,dsc), q3=div(dsc,ic), q4=div(ic,asc);
-    return [q1[0],q1[1],q1[2],ic,q4[1],q4[2],dsc,q3[1],q3[2],mc,q2[1],q2[2]];
+  function getHouseCusps(asc, mc, date, latDeg, lonDeg){
+    // Placidus
+    const RAMC=ramcDeg(date, lonDeg), RAIC=norm360(RAMC+180);
+    const ra12=iterateRA(RAMC,latDeg,1/3,RAMC+60,false), ra11=iterateRA(RAMC,latDeg,2/3,RAMC+30,false);
+    const ra2 =iterateRA(RAMC,latDeg,2/3,RAIC-60,true),  ra3 =iterateRA(RAMC,latDeg,1/3,RAIC-30,true);
+    const c10=mc, c11=eclipticFromRA(ra11), c12=eclipticFromRA(ra12);
+    const c1=asc, c2=eclipticFromRA(ra2), c3=eclipticFromRA(ra3);
+    const c4=norm360(c10+180), c5=norm360(c11+180), c6=norm360(c12+180);
+    const c7=norm360(c1+180),  c8=norm360(c2+180),  c9=norm360(c3+180);
+    return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12];
   }
   function houseOfByCusps(lon, cusps){
     const c=cusps.map(x=>norm360(x)); const seq=[c[0]]; for(let i=1;i<12;i++){let v=c[i]; if(v<seq[i-1]) v+=360; seq.push(v);}
@@ -267,76 +298,48 @@ window.addEventListener('load', () => {
     return 12;
   }
 
-  // Fortuna
+  // Fortuna (día/noche)
   function sunEquatorialFromEclLon(lon){ const λ=deg2rad(lon); const dec=Math.asin(Math.sin(obliq)*Math.sin(λ)); const ra=Math.atan2(Math.sin(λ)*Math.cos(obliq), Math.cos(λ)); return {ra,dec};}
   function sunAltitude(date, latDeg, lonDeg, sunLon){ const {ra,dec}=sunEquatorialFromEclLon(sunLon); const lst=A.SiderealTime(date)*15*Math.PI/180+deg2rad(lonDeg); const ha=(lst-ra+2*Math.PI)%(2*Math.PI); const lat=deg2rad(latDeg); const sinAlt=Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(ha); return rad2deg(Math.asin(sinAlt)); }
   function partOfFortune(ascLon, sunLon, moonLon, isDay){ return norm360(isDay ? (ascLon + moonLon - sunLon) : (ascLon - moonLon + sunLon)); }
 
-  // ==== Imagen de referencia ====
-  let refImgDataUrl = null;
-  document.getElementById('imgUpload').addEventListener('change', (e)=>{
-    const f=e.target.files&&e.target.files[0]; if(!f) return;
-    const fr=new FileReader();
-    fr.onload=()=>{ refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block'; };
-    fr.readAsDataURL(f);
-  });
-  document.getElementById('imgUrl').addEventListener('change', async (e)=>{
-    const url=(e.target.value||'').trim(); if(!url) return;
-    try{
-      const r=await fetch(url,{mode:'cors'}); const b=await r.blob(); const fr=new FileReader();
-      fr.onload=()=>{ refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block'; };
-      fr.readAsDataURL(b);
-    }catch(err){
-      refImgDataUrl=null; const el=document.getElementById('refImg'); el.src=url; el.style.display='block';
-    }
-  });
-
   // ===== Aspectos (orbes estilo CN.es) =====
   const ORBS = { conj:8, opp:8, square:6, trine:6, sextile:4 };
-  function aspectColorDelta(d){ // d = 0..180
-    if (Math.abs(d-180)<=ORBS.opp)   return {color:"#e63946", name:"Oposición", sym:"☍", deg:180};
-    if (Math.abs(d-120)<=ORBS.trine) return {color:"#2b77d2", name:"Trígono",   sym:"△", deg:120};
-    if (Math.abs(d-90)<=ORBS.square) return {color:"#e63946", name:"Cuadratura",sym:"□", deg:90};
-    if (Math.abs(d-60)<=ORBS.sextile)return {color:"#2a9d8f", name:"Sextil",    sym:"✶", deg:60};
-    if (Math.abs(d-0)<=ORBS.conj)    return {color:"#e63946", name:"Conjunción",sym:"☌", deg:0};
-    return null;
-  }
+  function aspectInfo(d){ if (Math.abs(d-180)<=ORBS.opp) return {color:"#e63946",name:"Oposición",sym:"☍",deg:180};
+    if (Math.abs(d-120)<=ORBS.trine) return {color:"#2b77d2",name:"Trígono",sym:"△",deg:120};
+    if (Math.abs(d-90)<=ORBS.square) return {color:"#e63946",name:"Cuadratura",sym:"□",deg:90};
+    if (Math.abs(d-60)<=ORBS.sextile) return {color:"#2a9d8f",name:"Sextil",sym:"✶",deg:60};
+    if (Math.abs(d-0)<=ORBS.conj) return {color:"#e63946",name:"Conjunción",sym:"☌",deg:0};
+    return null; }
 
   // Dibujo
   function drawWheel(ctx,w,h,longs,asc,cusps){
     const cx=w/2,cy=h/2,R=w*0.42,rPlan=R*0.88;
     ctx.clearRect(0,0,w,h);
-    // círculo
     ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();ctx.strokeStyle="#e6cfe1";ctx.stroke();
-    // signos
     const signs=["Aries","Tauro","Géminis","Cáncer","Leo","Virgo","Libra","Escorpio","Sagitario","Capricornio","Acuario","Piscis"];
     ctx.font="600 12px system-ui";ctx.fillStyle="#2d1b2d";
     for(let i=0;i<12;i++){
       const a=eclLonToAngle(i*30+15); ctx.fillText(signs[i], cx+Math.cos(a)*(R+18), cy+Math.sin(a)*(R+18));
       const d=eclLonToAngle(i*30); ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(d)*R, cy+Math.sin(d)*R); ctx.strokeStyle="#ead6ef";ctx.lineWidth=1;ctx.stroke();
     }
-    // casas por cúspides
     ctx.save(); ctx.translate(cx,cy);
     for(let i=0;i<12;i++){
       const ang=eclLonToAngle(cusps[i]); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(ang)*R*0.96, Math.sin(ang)*R*0.96); ctx.strokeStyle="#c7a1d8"; ctx.lineWidth=2; ctx.stroke();
       const next=cusps[(i+1)%12]; const mid=norm360(cusps[i]+(norm360(next-cusps[i])||360)/2); const am=eclLonToAngle(mid);
       ctx.fillStyle="#9b5de5"; ctx.font="bold 16px Inter"; ctx.fillText(String(i+1), cx+Math.cos(am)*R*0.65, cy+Math.sin(am)*R*0.65);
     }
-    // marcar ASC
     const a=eclLonToAngle(asc); ctx.strokeStyle="#9b5de5"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*R, Math.sin(a)*R); ctx.stroke();
     ctx.restore();
-
-    // aspectos (no usamos SouthNode para líneas)
     const keys=Object.keys(longs).filter(k=>!['Fortuna','SouthNode'].includes(k));
     ctx.lineWidth=1.4;
     for(let i=0;i<keys.length;i++)for(let j=i+1;j<keys.length;j++){
       const d=Math.abs(longs[keys[i]]-longs[keys[j]]); const dd=Math.min(d,360-d);
-      const info=aspectColorDelta(dd); if(!info) continue;
+      const info=aspectInfo(dd); if(!info) continue;
       const a=eclLonToAngle(longs[keys[i]]), b=eclLonToAngle(longs[keys[j]]);
       const x1=cx+Math.cos(a)*rPlan,y1=cy+Math.sin(a)*rPlan,x2=cx+Math.cos(b)*rPlan,y2=cy+Math.sin(b)*rPlan;
       ctx.strokeStyle=info.color; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     }
-    // planetas + Fortuna + Nodos + Lilith
     const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇",Fortuna:"⊗",NorthNode:"☊",SouthNode:"☋",Lilith:"⚸"};
     ctx.font='20px serif'; ctx.fillStyle='#1f1142';
     for(const k of Object.keys(longs)){
@@ -346,124 +349,89 @@ window.addEventListener('load', () => {
     }
   }
 
-  // Textos cortos
-  const TEXTS={
-    Sun:{Aries:"Iniciativa y coraje.",Tauro:"Constancia y disfrute.",Géminis:"Curiosidad y versatilidad.",Cáncer:"Protección y sensibilidad.",Leo:"Creatividad y brillo.",Virgo:"Servicio y mejora.",Libra:"Armonía y vínculos.",Escorpio:"Transformación profunda.",Sagitario:"Búsqueda de sentido.",Capricornio:"Estructura y logro.",Acuario:"Originalidad social.",Piscis:"Empatía y espiritualidad."},
-    Moon:{Aries:"Reacción rápida.",Tauro:"Necesita estabilidad sensorial.",Géminis:"Variedad y diálogo.",Cáncer:"Refugio emocional.",Leo:"Expresividad y calidez.",Virgo:"Orden y utilidad.",Libra:"Equilibrio afectivo.",Escorpio:"Intensidad emocional.",Sagitario:"Aventura y fe.",Capricornio:"Autocontrol y cuidado.",Acuario:"Independencia emocional.",Piscis:"Compasión y fantasía."},
-    Lilith:{Aries:"Afirma deseo propio.",Tauro:"Corta apegos materiales.",Géminis:"Sana la palabra.",Cáncer:"Repara carencias.",Leo:"Abraza el brillo.",Virgo:"Suelta el rigor.",Libra:"Límites en vínculos.",Escorpio:"Transmuta tabúes.",Sagitario:"Verdad sin exceso.",Capricornio:"Poder responsable.",Acuario:"Diferencia sana.",Piscis:"Sensibilidad con límites."},
-    NodeN:{Aries:"Autonomía e iniciativa.",Tauro:"Estabilidad y valor propio.",Géminis:"Comunicación y adaptación.",Cáncer:"Cuidado y pertenencia.",Leo:"Creatividad del corazón.",Virgo:"Orden y servicio.",Libra:"Cooperación justa.",Escorpio:"Profundizar y transformar.",Sagitario:"Sentido y expansión.",Capricornio:"Metas y estructura.",Acuario:"Innovación en comunidad.",Piscis:"Confianza en lo sutil."}
-  };
-  const HOUSES={1:"Identidad e impulso vital.",2:"Recursos y valor propio.",3:"Comunicación y entorno cercano.",4:"Hogar y raíces.",5:"Juego y creatividad.",6:"Trabajo y salud.",7:"Parejas y asociaciones.",8:"Intimidad y transformación.",9:"Filosofía y viajes.",10:"Vocación e imagen pública.",11:"Amistades y redes.",12:"Inconsciente y retiro."};
-
-  function planetParagraph(name, lon, house, labelOverride){
-    const sign=signOf(lon);
-    const nice=labelOverride||({Sun:"Sol",Moon:"Luna",Mercury:"Mercurio",Venus:"Venus",Mars:"Marte",Jupiter:"Júpiter",Saturn:"Saturno",Uranus:"Urano",Neptune:"Neptuno",Pluto:"Plutón"})[name]||name;
-    let table=TEXTS[name]; if(labelOverride==='Nodo Norte') table=TEXTS.NodeN; if(labelOverride==='Lilith') table=TEXTS.Lilith;
-    const t=(table && table[sign])?table[sign]:`${nice} en ${sign}.`;
-    return `<p><b>${nice}</b> en <b>${sign}</b>${house?` (Casa ${house})`:''}: ${t}${house?` — ${HOUSES[house]}`:''}</p>`;
-  }
-  function fmtLon(lon){const s=signOf(lon), L=((lon%360)+360)%360, deg=Math.floor(L%30), min=Math.floor(((L%1)*60+60)%60); return `${s} ${deg}°${String(min).padStart(2,'0')}'`; }
-
-  function detectAspects(longs){
-    const pts = Object.entries(longs).filter(([k])=>!['Fortuna','SouthNode'].includes(k));
-    const aspects=[];
-    for(let i=0;i<pts.length;i++){
-      for(let j=i+1;j<pts.length;j++){
-        const [ki,ai]=pts[i]; const [kj,aj]=pts[j];
-        const d=Math.abs(ai-aj); const dd=Math.min(d,360-d);
-        const info=aspectColorDelta(dd);
-        if(info){ aspects.push({p1:ki,p2:kj,deg:info.deg,off:+Math.abs(dd-info.deg).toFixed(1),sym:info.sym,name:info.name,color:info.color}); }
-      }
-    }
-    const rank={red:0,blue:1,green:2}; aspects.sort((a,b)=>rank[a.color]-rank[b.color]||a.off-b.off);
-    return aspects;
+  function fmtDMS(lon){
+    const signs=["Aries","Tauro","Géminis","Cáncer","Leo","Virgo","Libra","Escorpio","Sagitario","Capricornio","Acuario","Piscis"];
+    const L=norm360(lon); const sign=signs[Math.floor(L/30)];
+    const degAll=(L%30); const d=Math.floor(degAll);
+    const mAll=(degAll-d)*60; const m=Math.floor(mAll);
+    const s=Math.round((mAll-m)*60);
+    return {sign, text:`${sign} ${String(d).padStart(2,'0')}°${String(m).padStart(2,'0')}'${String(s).padStart(2,'0')}"`};
   }
 
-  // Toggle "Modo CN.es"
-  document.getElementById('cnMode').addEventListener('change', e=>{
-    if(e.target.checked){
-      document.getElementById('zodiac').value='tropical';
-      document.getElementById('houseSystem').value='placidus';
-      // orbes ya definidos arriba coinciden con estilo CN.es
-      show('Modo CN.es activado: Tropical + Placidus + orbes clásicos.', true);
-      setTimeout(hide,1200);
+  function buildTables(longs,cusps,houses){
+    const order=[["Sol","Sun"],["Luna","Moon"],["Mercurio","Mercury"],["Venus","Venus"],["Marte","Mars"],["Júpiter","Jupiter"],["Saturno","Saturn"],["Urano","Uranus"],["Neptuno","Neptune"],["Plutón","Pluto"],["Nodo N (m)","NorthNode"],["Nodo S","SouthNode"],["Lilith (m)","Lilith"],["Fortuna","Fortuna"]];
+    const tp=document.getElementById('tblPositions'); tp.innerHTML=""; tp.insertAdjacentHTML('beforeend',`<tr><th>Planeta</th><th>Posición</th><th>Casa</th></tr>`);
+    for(const [label,key] of order){ const {text}=fmtDMS(longs[key]); const c=(houses[key]||"—"); tp.insertAdjacentHTML('beforeend',`<tr><td>${label}</td><td>${text}</td><td><b>${c}</b></td></tr>`); }
+    const tc=document.getElementById('tblCusps'); tc.innerHTML=""; tc.insertAdjacentHTML('beforeend',`<tr><th>Casa</th><th>Signo</th></tr>`);
+    for(let i=0;i<12;i++){ const {text}=fmtDMS(cusps[i]); const lbl=i===0?"Casa 1 (AC)":i===9?"Casa 10 (MC)":`Casa ${i+1}`; tc.insertAdjacentHTML('beforeend',`<tr><td>${lbl}</td><td>${text}</td></tr>`); }
+    const ta=document.getElementById('tblAspects'); ta.innerHTML=""; ta.insertAdjacentHTML('beforeend',`<tr><th>Planeta</th><th>Aspecto</th><th>Planeta</th><th>Orbe</th></tr>`);
+    const pts=Object.entries(longs).filter(([k])=>!['Fortuna','SouthNode'].includes(k));
+    const rank={red:0,blue:1,green:2}; const aspects=[];
+    for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+      const [ki,ai]=pts[i]; const [kj,aj]=pts[j]; const dd=Math.min(Math.abs(ai-aj),360-Math.abs(ai-aj));
+      const info=aspectInfo(dd); if(!info) continue; aspects.push({p1:ki,p2:kj,off:Math.abs(dd-info.deg),info});
     }
-  });
+    aspects.sort((a,b)=>rank[a.info.color]-rank[b.info.color]||a.off-b.off);
+    for(const a of aspects){ ta.insertAdjacentHTML('beforeend',`<tr><td>${a.p1}</td><td>${a.info.sym} ${a.info.name}</td><td>${a.p2}</td><td>${a.off.toFixed(2)}°</td></tr>`); }
+  }
 
+  // ==== Imagen referencia (opcional) ====
+  let refImgDataUrl=null;
+  document.getElementById('imgUpload').addEventListener('change',(e)=>{const f=e.target.files&&e.target.files[0]; if(!f)return; const fr=new FileReader(); fr.onload=()=>{refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block';}; fr.readAsDataURL(f);});
+  document.getElementById('imgUrl').addEventListener('change',async(e)=>{const url=(e.target.value||'').trim(); if(!url)return; try{const r=await fetch(url,{mode:'cors'}); const b=await r.blob(); const fr=new FileReader(); fr.onload=()=>{refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block';}; fr.readAsDataURL(b);}catch(err){refImgDataUrl=null; const el=document.getElementById('refImg'); el.src=url; el.style.display='block';}});
+
+  // Render principal
   async function renderAll(){
     try{
-      if(!window.Astronomy){ show('No cargó Astronomy. Refrescá con Ctrl+F5.'); return; }
-      hide();
       const day=daySel.value, month=document.getElementById('month').value, year=document.getElementById('year').value;
       const hour=document.getElementById('hour').value, minute=document.getElementById('minute').value, tz=document.getElementById('tz').value||'-03:00';
       const name=(document.getElementById('name').value||'Consultante').trim();
       const city=document.getElementById('city').value||'', country=document.getElementById('country').value||'';
-      const lat=parseFloat(document.getElementById('lat').value||-38.0), lon=parseFloat(document.getElementById('lon').value||-57.56);
-      const system=document.getElementById('houseSystem').value, zodiac=document.getElementById('zodiac').value;
+      const lat=parseFloat(document.getElementById('lat').value||-38.0), lon=parseFloat(document.getElementById('lon').value||-57.55);
       const deltaMin=parseInt(document.getElementById('deltaMin').value||0,10);
 
       const base=buildDate(day,month,year,hour,minute,tz);
       const date=new Date(base.getTime()+deltaMin*60000);
 
-      const longs=await computeLongitudes(date, zodiac);
+      const longs=await computeLongitudes(date); // Swiss si está disponible
 
-      // Nodos y Lilith
-      const nn = meanLunarNode(date, zodiac);
-      const sn = norm360(nn + 180);
-      const lil = meanLilith(date, zodiac);
-      longs.NorthNode = nn; longs.SouthNode = sn; longs.Lilith = lil;
+      // Nodos / Lilith
+      const nn=meanLunarNode(date), sn=norm360(nn+180), lil=meanLilith(date);
+      longs.NorthNode=nn; longs.SouthNode=sn; longs.Lilith=lil;
 
-      // Asc/MC/Casas
+      // Asc/MC/Casas Placidus
       const RAMC=ramcDeg(date, lon), mc=mcFromRAMC(RAMC), asc=ascFromRAMC(lat, RAMC);
-      const cusps=getHouseCusps(asc, mc, system, date, lat, lon);
+      const cusps=getHouseCusps(asc, mc, date, lat, lon);
 
       // Fortuna
       const sunAlt=sunAltitude(date, lat, lon, longs.Sun), fortuna=partOfFortune(asc,longs.Sun,longs.Moon, sunAlt>0);
       longs.Fortuna=fortuna;
 
       // Casas por punto
-      const houses={};
-      const keysHouse=["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto","NorthNode","Lilith"];
-      for(const k of keysHouse){ houses[k]=houseOfByCusps(longs[k], cusps); }
-      const fortunaHouse=houseOfByCusps(fortuna, cusps);
+      const houses={}; for(const k of Object.keys(longs)){ houses[k]=houseOfByCusps(longs[k], cusps); }
 
       // Dibujo
       const canvas=document.getElementById('wheel');
       drawWheel(canvas.getContext('2d'), canvas.width, canvas.height, longs, asc, cusps);
 
-      // Informe
+      // Paneles
+      buildTables(longs,cusps,houses);
+
+      // Verificación
+      function fmt(l){const {text}=fmtDMS(l); return text;}
       const dd=`${day}/${month}/${year}`, tt=`${hour}:${minute}`, place=[city,country].filter(Boolean).join(', ');
-      const zodiacLabel=(zodiac==='sidereal_lahiri')?'Sideral – Lahiri':'Tropical';
-      const casasLabel=({placidus:'Placidus',porphyry:'Porphyry',whole:'Whole Sign',equal:'Iguales'})[system];
+      const debug=`<div class="debug"><b>Verificación</b><br>
+        UTC: ${date.toISOString()} · ASC: ${fmt(asc)} · MC: ${fmt(mc)}<br>
+        Sol: ${fmt(longs.Sun)} · Luna: ${fmt(longs.Moon)} · NN: ${fmt(nn)} · Lilith: ${fmt(lil)} · Fortuna: ${fmt(fortuna)} (${sunAlt>0?'Día':'Noche'})</div>`;
 
       let html=`<h3 style="margin:.2em 0">${name}</h3>
-      <div><b>Datos:</b> ${dd} · ${tt}${place?` · ${place}`:''}</div>
-      <div class="hint">Zodíaco: ${zodiacLabel} · Casas: ${casasLabel} · Corrección: ${deltaMin} min</div>
-      <hr class="hr"/>`;
-      const order=["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"];
-      for(const k of order){ html+=planetParagraph(k,longs[k],houses[k]); }
-      html+=planetParagraph('NorthNode',longs.NorthNode,houses.NorthNode,'Nodo Norte');
-      html+=planetParagraph('Lilith',longs.Lilith,houses.Lilith,'Lilith');
-      html+=`<p><b>Rueda de la Fortuna</b> en <b>${signOf(fortuna)}</b> (Casa ${fortunaHouse}).</p>`;
-
-      // Aspectos
-      const aspects = detectAspects(longs);
-      const colorBadge = c => c==='red'?'badge red':c==='blue'?'badge blue':'badge green';
-      let aspectsHTML = aspects.length? '<ul class="aspects">' : '<p class="hint">No se detectaron aspectos mayores dentro del orbe.</p>';
-      for(const a of aspects){
-        aspectsHTML += `<li>${a.p1} ${a.sym} ${a.p2} &nbsp;(${a.name}, orbe ${a.off}°) <span class="${colorBadge(a.color)}">${a.deg}°</span></li>`;
-      }
-      if(aspects.length) aspectsHTML+='</ul>';
-      html += `<h4>Aspectos principales</h4>${aspectsHTML}`;
-
-      html+=`<p class="hint"><strong>Aviso:</strong> Carta calculada con efemérides astronómicas a partir de los <u>datos exactos de nacimiento</u>. Interpretación orientativa; no sustituye asesoramientos profesionales. <em>Uso exclusivo del/la consultante.</em></p>`;
-
-      const debug=`<div class="debug"><b>Verificación</b><br>
-        UTC: ${date.toISOString()} · ASC: ${fmtLon(asc)} · MC: ${fmtLon(mc)}<br>
-        Sol: ${fmtLon(longs.Sun)} · Luna: ${fmtLon(longs.Moon)} · NN: ${fmtLon(nn)} · Lilith: ${fmtLon(lil)} · Fortuna: ${fmtLon(fortuna)} (${sunAlt>0?'Día':'Noche'})</div>`;
+        <div><b>Datos:</b> ${dd} · ${tt}${place?` · ${place}`:''} (UTC ${tz})</div>
+        <div class="hint">Zodíaco: Tropical · Casas: Placidus · Δ ${deltaMin} min · Epemérides: ${SWE_READY?'Swiss Ephemeris':'Astronomy-Engine (fallback)'}</div>
+        <hr class="hr"/>
+        <p class="hint"><strong>Aviso:</strong> Carta calculada con efemérides astronómicas a partir de los <u>datos exactos de nacimiento</u>. Interpretación orientativa; <em>uso exclusivo del/la consultante</em>.</p>`;
       document.getElementById('report').innerHTML=debug+html;
 
-      // Export Word (HTML + imagen del canvas + imagen referencia si hay)
+      // Export (Word)
       const imgData=canvas.toDataURL('image/png');
       const extraImgHtml = refImgDataUrl
         ? `<img src="${refImgDataUrl}" style="width:500px;height:auto;margin:12px 0;border:1px solid #eee"/>`
@@ -473,10 +441,10 @@ window.addEventListener('load', () => {
       document.getElementById('exportArea').innerHTML =
         `<h1 style="font-family:Arial">Carta Astral – Sanación 11.11</h1>
          <div><b>${name}</b> · ${dd} ${tt}${place?` – ${place}`:''}</div>
-         <div style="margin:8px 0"><small>Zodíaco: ${zodiacLabel} · Casas: ${casasLabel} · Δ ${deltaMin} min</small></div>
+         <div style="margin:8px 0"><small>Tropical · Placidus · Δ ${deltaMin} min · ${SWE_READY?'Swiss Ephemeris':'AE fallback'}</small></div>
          <img src="${imgData}" style="width:500px;height:auto;margin:12px 0"/>
          ${extraImgHtml}
-         ${html}${debug}`;
+         ${document.getElementById('report').innerHTML}`;
     }catch(e){ console.error(e); show('Error al generar la carta. Revisá la consola (F12).'); }
   }
 
@@ -490,18 +458,15 @@ window.addEventListener('load', () => {
       const canvas=document.getElementById('wheel'); const img=canvas.toDataURL('image/png');
       const pageW=pdf.internal.pageSize.getWidth()-80; const ratio=pageW/canvas.width; const imgH=canvas.height*ratio;
       pdf.addImage(img,'PNG',40,60,pageW,imgH);
-
-      // imagen de referencia (si dataURL)
       if (refImgDataUrl) {
         let yAfter = 60 + imgH + 12;
-        if (yAfter > pdf.internal.pageSize.getHeight()-200){
+        if (yAfter > pdf.internal.pageSize.getHeight()-220){
           pdf.addPage(); pdf.setFillColor(255,230,240);
           pdf.rect(0,0,pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(),'F');
           yAfter = 60;
         }
         pdf.addImage(refImgDataUrl, 'PNG', 40, yAfter, pageW, 0);
       }
-
       const rep=document.getElementById('report'); const text=rep.innerText||rep.textContent||'';
       pdf.setFont('helvetica','normal'); pdf.setFontSize(12);
       const lines=pdf.splitTextToSize(text,pageW); let y=80+imgH+(refImgDataUrl?220:0);
@@ -529,6 +494,4 @@ window.addEventListener('load', () => {
 </script>
 </body>
 </html>
-
-
 
