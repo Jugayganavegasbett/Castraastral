@@ -16,19 +16,20 @@
 :root{--bg:#ffe6f0;--ink:#2d1b2d;--muted:#6a4c6a;--card:#ffffffcc;--accent:#9b5de5}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-.wrap{max-width:1000px;margin:32px auto;padding:0 16px}
+.wrap{max-width:1080px;margin:32px auto;padding:0 16px}
 header{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:16px}
 h1{font-size:clamp(20px,3vw,28px);margin:0}
-.actions{display:flex;gap:8px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
 .card{background:var(--card);padding:16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
 .grid{display:grid;gap:16px}
-@media(min-width:900px){.grid{grid-template-columns:360px 1fr}}
+@media(min-width:980px){.grid{grid-template-columns:420px 1fr}}
 label{font-size:12px;color:var(--muted);margin:10px 0 6px;display:block}
 input,select{width:100%;padding:10px;border:1px solid #e6cfe1;border-radius:10px;background:#fff;color:var(--ink)}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 button{background:var(--accent);color:#fff;border:0;padding:12px 16px;border-radius:12px;font-weight:700;cursor:pointer}
 button.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+.toggle{display:flex;gap:8px;align-items:center}
 canvas{max-width:100%;height:auto;background:#fff;border-radius:12px}
 footer{margin:24px 0;font-size:12px;color:var(--muted);text-align:center}
 .hint{font-size:12px;color:var(--muted)}
@@ -42,6 +43,7 @@ ul.aspects li{margin:3px 0}
 .badge.red{background:#ffe0e0;color:#b00020}
 .badge.blue{background:#e0ecff;color:#1a4c9c}
 .badge.green{background:#e0f5ef;color:#087f5b}
+#refImg{max-width:100%;margin-top:10px;display:none;border-radius:12px;background:#fff}
 </style>
 </head>
 <body>
@@ -52,6 +54,10 @@ ul.aspects li{margin:3px 0}
       <button id="btnRender" class="secondary">Generar carta</button>
       <button id="btnPdf">Descargar PDF</button>
       <button id="btnDocx">Descargar Word</button>
+      <label class="toggle">
+        <input type="checkbox" id="cnMode"/>
+        <span>Modo CN.es (Tropical+Placidus+orbes)</span>
+      </label>
     </div>
   </header>
 
@@ -114,12 +120,25 @@ ul.aspects li{margin:3px 0}
         </div>
       </div>
 
+      <!-- Imagen de referencia -->
+      <div class="row">
+        <div>
+          <label>Imagen de referencia (subir)</label>
+          <input id="imgUpload" type="file" accept="image/*"/>
+        </div>
+        <div>
+          <label>…o URL de imagen (opcional)</label>
+          <input id="imgUrl" placeholder="https://sitio/miimagen.png"/>
+        </div>
+      </div>
+
       <p class="hint">Tip: Argentina usa <b>-03:00</b>. Si no sabés lat/lon, dejá los valores por defecto.</p>
     </section>
 
-    <!-- Mapa -->
+    <!-- Mapa + preview -->
     <section class="card">
       <canvas id="wheel" width="880" height="880"></canvas>
+      <img id="refImg" alt="Imagen de referencia"/>
       <p class="hint">Rueda moderna con Placidus y aspectos (rojo tensión, azul trígono, verde sextil).</p>
     </section>
   </div>
@@ -188,20 +207,17 @@ window.addEventListener('load', () => {
     return res;
   }
 
-  // ===== Nodos y Lilith (aprox. "mean") =====
+  // ===== Nodos y Lilith (mean) =====
   function julianDay(date){ return date.getTime()/86400000 + 2440587.5; }
   function centuriesJ2000(date){ return (julianDay(date) - 2451545.0)/36525.0; }
-
-  function meanLunarNode(date, zodiac){ // Ascendente lunar (Nodo Norte)
+  function meanLunarNode(date, zodiac){
     const T = centuriesJ2000(date);
-    // Meeus: Ω = 125.04455501 − 1934.1361849 T + 0.0020762 T² + T³/467410 − T⁴/60616000
     let omega = 125.04455501 - 1934.1361849*T + 0.0020762*T*T + (T*T*T)/467410 - (T*T*T*T)/60616000;
     if (zodiac==='sidereal_lahiri') omega -= ayanamshaLahiriDeg(date);
     return norm360(omega);
   }
-  function meanLilith(date, zodiac){ // apogeo lunar medio (Luna Negra)
+  function meanLilith(date, zodiac){
     const T = centuriesJ2000(date);
-    // Meeus: L_apo = 83.3532465 + 4069.0137287 T − 0.01032 T² − T³/80053 + T⁴/18999000
     let L = 83.3532465 + 4069.0137287*T - 0.01032*T*T - (T*T*T)/80053 + (T*T*T*T)/18999000;
     if (zodiac==='sidereal_lahiri') L -= ayanamshaLahiriDeg(date);
     return norm360(L);
@@ -256,6 +272,36 @@ window.addEventListener('load', () => {
   function sunAltitude(date, latDeg, lonDeg, sunLon){ const {ra,dec}=sunEquatorialFromEclLon(sunLon); const lst=A.SiderealTime(date)*15*Math.PI/180+deg2rad(lonDeg); const ha=(lst-ra+2*Math.PI)%(2*Math.PI); const lat=deg2rad(latDeg); const sinAlt=Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(ha); return rad2deg(Math.asin(sinAlt)); }
   function partOfFortune(ascLon, sunLon, moonLon, isDay){ return norm360(isDay ? (ascLon + moonLon - sunLon) : (ascLon - moonLon + sunLon)); }
 
+  // ==== Imagen de referencia ====
+  let refImgDataUrl = null;
+  document.getElementById('imgUpload').addEventListener('change', (e)=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block'; };
+    fr.readAsDataURL(f);
+  });
+  document.getElementById('imgUrl').addEventListener('change', async (e)=>{
+    const url=(e.target.value||'').trim(); if(!url) return;
+    try{
+      const r=await fetch(url,{mode:'cors'}); const b=await r.blob(); const fr=new FileReader();
+      fr.onload=()=>{ refImgDataUrl=fr.result; const el=document.getElementById('refImg'); el.src=refImgDataUrl; el.style.display='block'; };
+      fr.readAsDataURL(b);
+    }catch(err){
+      refImgDataUrl=null; const el=document.getElementById('refImg'); el.src=url; el.style.display='block';
+    }
+  });
+
+  // ===== Aspectos (orbes estilo CN.es) =====
+  const ORBS = { conj:8, opp:8, square:6, trine:6, sextile:4 };
+  function aspectColorDelta(d){ // d = 0..180
+    if (Math.abs(d-180)<=ORBS.opp)   return {color:"#e63946", name:"Oposición", sym:"☍", deg:180};
+    if (Math.abs(d-120)<=ORBS.trine) return {color:"#2b77d2", name:"Trígono",   sym:"△", deg:120};
+    if (Math.abs(d-90)<=ORBS.square) return {color:"#e63946", name:"Cuadratura",sym:"□", deg:90};
+    if (Math.abs(d-60)<=ORBS.sextile)return {color:"#2a9d8f", name:"Sextil",    sym:"✶", deg:60};
+    if (Math.abs(d-0)<=ORBS.conj)    return {color:"#e63946", name:"Conjunción",sym:"☌", deg:0};
+    return null;
+  }
+
   // Dibujo
   function drawWheel(ctx,w,h,longs,asc,cusps){
     const cx=w/2,cy=h/2,R=w*0.42,rPlan=R*0.88;
@@ -280,15 +326,15 @@ window.addEventListener('load', () => {
     const a=eclLonToAngle(asc); ctx.strokeStyle="#9b5de5"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*R, Math.sin(a)*R); ctx.stroke();
     ctx.restore();
 
-    // aspectos (rojo: 0/90/180; azul: 120; verde: 60)
-    const keys=Object.keys(longs).filter(k=>!['Fortuna','SouthNode'].includes(k)); // no usamos SN para aspectos
-    function aspectColor(d){d=Math.min(d,360-d); if(Math.abs(d-180)<=4||Math.abs(d-90)<=4||Math.abs(d-0)<=3) return "#e63946"; if(Math.abs(d-120)<=4) return "#2b77d2"; if(Math.abs(d-60)<=4) return "#2a9d8f"; return null;}
+    // aspectos (no usamos SouthNode para líneas)
+    const keys=Object.keys(longs).filter(k=>!['Fortuna','SouthNode'].includes(k));
     ctx.lineWidth=1.4;
     for(let i=0;i<keys.length;i++)for(let j=i+1;j<keys.length;j++){
-      const d=Math.abs(longs[keys[i]]-longs[keys[j]]), col=aspectColor(d); if(!col) continue;
+      const d=Math.abs(longs[keys[i]]-longs[keys[j]]); const dd=Math.min(d,360-d);
+      const info=aspectColorDelta(dd); if(!info) continue;
       const a=eclLonToAngle(longs[keys[i]]), b=eclLonToAngle(longs[keys[j]]);
       const x1=cx+Math.cos(a)*rPlan,y1=cy+Math.sin(a)*rPlan,x2=cx+Math.cos(b)*rPlan,y2=cy+Math.sin(b)*rPlan;
-      ctx.strokeStyle=col; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      ctx.strokeStyle=info.color; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     }
     // planetas + Fortuna + Nodos + Lilith
     const glyphs={Sun:"☉",Moon:"☽",Mercury:"☿",Venus:"♀",Mars:"♂",Jupiter:"♃",Saturn:"♄",Uranus:"♅",Neptune:"♆",Pluto:"♇",Fortuna:"⊗",NorthNode:"☊",SouthNode:"☋",Lilith:"⚸"};
@@ -300,53 +346,49 @@ window.addEventListener('load', () => {
     }
   }
 
-  // Textos resumidos
+  // Textos cortos
   const TEXTS={
     Sun:{Aries:"Iniciativa y coraje.",Tauro:"Constancia y disfrute.",Géminis:"Curiosidad y versatilidad.",Cáncer:"Protección y sensibilidad.",Leo:"Creatividad y brillo.",Virgo:"Servicio y mejora.",Libra:"Armonía y vínculos.",Escorpio:"Transformación profunda.",Sagitario:"Búsqueda de sentido.",Capricornio:"Estructura y logro.",Acuario:"Originalidad social.",Piscis:"Empatía y espiritualidad."},
     Moon:{Aries:"Reacción rápida.",Tauro:"Necesita estabilidad sensorial.",Géminis:"Variedad y diálogo.",Cáncer:"Refugio emocional.",Leo:"Expresividad y calidez.",Virgo:"Orden y utilidad.",Libra:"Equilibrio afectivo.",Escorpio:"Intensidad emocional.",Sagitario:"Aventura y fe.",Capricornio:"Autocontrol y cuidado.",Acuario:"Independencia emocional.",Piscis:"Compasión y fantasía."},
-    Lilith:{Aries:"Afirma deseo propio sin culpa.",Tauro:"Corta apegos materiales.",Géminis:"Sana la palabra y la duda.",Cáncer:"Repara carencias afectivas.",Leo:"Abraza el brillo sin juicio.",Virgo:"Suelta perfeccionismo rígido.",Libra:"Límites en vínculos.",Escorpio:"Transmuta tabúes y culpas.",Sagitario:"Verdad sin fanatismo.",Capricornio:"Poder personal con responsabilidad.",Acuario:"Diferencia sana sin aislamiento.",Piscis:"Sensibilidad con límites."},
-    NodeN:{Aries:"Camino de autonomía y iniciativa.",Tauro:"Aprender estabilidad y valor propio.",Géminis:"Comunicar y adaptarse.",Cáncer:"Vincularse desde el cuidado.",Leo:"Creatividad y liderazgo del corazón.",Virgo:"Orden, servicio y salud.",Libra:"Cooperación justa.",Escorpio:"Profundizar y transformar.",Sagitario:"Buscar sentido y expandir.",Capricornio:"Construir metas y estructura.",Acuario:"Innovar en comunidad.",Piscis:"Confiar en lo sutil y compasivo."}
+    Lilith:{Aries:"Afirma deseo propio.",Tauro:"Corta apegos materiales.",Géminis:"Sana la palabra.",Cáncer:"Repara carencias.",Leo:"Abraza el brillo.",Virgo:"Suelta el rigor.",Libra:"Límites en vínculos.",Escorpio:"Transmuta tabúes.",Sagitario:"Verdad sin exceso.",Capricornio:"Poder responsable.",Acuario:"Diferencia sana.",Piscis:"Sensibilidad con límites."},
+    NodeN:{Aries:"Autonomía e iniciativa.",Tauro:"Estabilidad y valor propio.",Géminis:"Comunicación y adaptación.",Cáncer:"Cuidado y pertenencia.",Leo:"Creatividad del corazón.",Virgo:"Orden y servicio.",Libra:"Cooperación justa.",Escorpio:"Profundizar y transformar.",Sagitario:"Sentido y expansión.",Capricornio:"Metas y estructura.",Acuario:"Innovación en comunidad.",Piscis:"Confianza en lo sutil."}
   };
   const HOUSES={1:"Identidad e impulso vital.",2:"Recursos y valor propio.",3:"Comunicación y entorno cercano.",4:"Hogar y raíces.",5:"Juego y creatividad.",6:"Trabajo y salud.",7:"Parejas y asociaciones.",8:"Intimidad y transformación.",9:"Filosofía y viajes.",10:"Vocación e imagen pública.",11:"Amistades y redes.",12:"Inconsciente y retiro."};
 
   function planetParagraph(name, lon, house, labelOverride){
     const sign=signOf(lon);
     const nice=labelOverride||({Sun:"Sol",Moon:"Luna",Mercury:"Mercurio",Venus:"Venus",Mars:"Marte",Jupiter:"Júpiter",Saturn:"Saturno",Uranus:"Urano",Neptune:"Neptuno",Pluto:"Plutón"})[name]||name;
-    let table=TEXTS[name]||TEXTS[labelOverride]||TEXTS.NodeN;
-    if(labelOverride==='Nodo Norte') table=TEXTS.NodeN;
+    let table=TEXTS[name]; if(labelOverride==='Nodo Norte') table=TEXTS.NodeN; if(labelOverride==='Lilith') table=TEXTS.Lilith;
     const t=(table && table[sign])?table[sign]:`${nice} en ${sign}.`;
     return `<p><b>${nice}</b> en <b>${sign}</b>${house?` (Casa ${house})`:''}: ${t}${house?` — ${HOUSES[house]}`:''}</p>`;
   }
   function fmtLon(lon){const s=signOf(lon), L=((lon%360)+360)%360, deg=Math.floor(L%30), min=Math.floor(((L%1)*60+60)%60); return `${s} ${deg}°${String(min).padStart(2,'0')}'`; }
 
-  // Aspectos listados
   function detectAspects(longs){
-    const pts = Object.entries(longs)
-      .filter(([k])=>!['Fortuna','SouthNode'].includes(k)); // omitimos SN/POF
+    const pts = Object.entries(longs).filter(([k])=>!['Fortuna','SouthNode'].includes(k));
     const aspects=[];
-    const targets=[{a:0,sym:'☌',name:'Conjunción',orb:6,color:'red'},
-                   {a:60,sym:'✶',name:'Sextil',orb:4,color:'green'},
-                   {a:90,sym:'□',name:'Cuadratura',orb:5,color:'red'},
-                   {a:120,sym:'△',name:'Trígono',orb:5,color:'blue'},
-                   {a:180,sym:'☍',name:'Oposición',orb:6,color:'red'}];
     for(let i=0;i<pts.length;i++){
       for(let j=i+1;j<pts.length;j++){
         const [ki,ai]=pts[i]; const [kj,aj]=pts[j];
         const d=Math.abs(ai-aj); const dd=Math.min(d,360-d);
-        for(const t of targets){
-          const dif=Math.abs(dd - t.a);
-          if(dif<=t.orb){
-            aspects.push({p1:ki,p2:kj,deg:t.a,off:+dif.toFixed(1),sym:t.sym,name:t.name,color:t.color});
-            break;
-          }
-        }
+        const info=aspectColorDelta(dd);
+        if(info){ aspects.push({p1:ki,p2:kj,deg:info.deg,off:+Math.abs(dd-info.deg).toFixed(1),sym:info.sym,name:info.name,color:info.color}); }
       }
     }
-    // ordenar: tensión primero, luego armonías
-    const rank={red:0,blue:1,green:2};
-    aspects.sort((a,b)=>rank[a.color]-rank[b.color] || a.off-b.off);
+    const rank={red:0,blue:1,green:2}; aspects.sort((a,b)=>rank[a.color]-rank[b.color]||a.off-b.off);
     return aspects;
   }
+
+  // Toggle "Modo CN.es"
+  document.getElementById('cnMode').addEventListener('change', e=>{
+    if(e.target.checked){
+      document.getElementById('zodiac').value='tropical';
+      document.getElementById('houseSystem').value='placidus';
+      // orbes ya definidos arriba coinciden con estilo CN.es
+      show('Modo CN.es activado: Tropical + Placidus + orbes clásicos.', true);
+      setTimeout(hide,1200);
+    }
+  });
 
   async function renderAll(){
     try{
@@ -369,9 +411,7 @@ window.addEventListener('load', () => {
       const nn = meanLunarNode(date, zodiac);
       const sn = norm360(nn + 180);
       const lil = meanLilith(date, zodiac);
-      longs.NorthNode = nn;
-      longs.SouthNode = sn;
-      longs.Lilith = lil;
+      longs.NorthNode = nn; longs.SouthNode = sn; longs.Lilith = lil;
 
       // Asc/MC/Casas
       const RAMC=ramcDeg(date, lon), mc=mcFromRAMC(RAMC), asc=ascFromRAMC(lat, RAMC);
@@ -423,13 +463,20 @@ window.addEventListener('load', () => {
         Sol: ${fmtLon(longs.Sun)} · Luna: ${fmtLon(longs.Moon)} · NN: ${fmtLon(nn)} · Lilith: ${fmtLon(lil)} · Fortuna: ${fmtLon(fortuna)} (${sunAlt>0?'Día':'Noche'})</div>`;
       document.getElementById('report').innerHTML=debug+html;
 
-      // Export Word (mismo contenido + imagen)
+      // Export Word (HTML + imagen del canvas + imagen referencia si hay)
       const imgData=canvas.toDataURL('image/png');
+      const extraImgHtml = refImgDataUrl
+        ? `<img src="${refImgDataUrl}" style="width:500px;height:auto;margin:12px 0;border:1px solid #eee"/>`
+        : (document.getElementById('imgUrl').value
+            ? `<img src="${document.getElementById('imgUrl').value}" style="width:500px;height:auto;margin:12px 0;border:1px solid #eee"/>`
+            : '');
       document.getElementById('exportArea').innerHTML =
         `<h1 style="font-family:Arial">Carta Astral – Sanación 11.11</h1>
          <div><b>${name}</b> · ${dd} ${tt}${place?` – ${place}`:''}</div>
          <div style="margin:8px 0"><small>Zodíaco: ${zodiacLabel} · Casas: ${casasLabel} · Δ ${deltaMin} min</small></div>
-         <img src="${imgData}" style="width:500px;height:auto;margin:12px 0"/>${html}${debug}`;
+         <img src="${imgData}" style="width:500px;height:auto;margin:12px 0"/>
+         ${extraImgHtml}
+         ${html}${debug}`;
     }catch(e){ console.error(e); show('Error al generar la carta. Revisá la consola (F12).'); }
   }
 
@@ -443,9 +490,21 @@ window.addEventListener('load', () => {
       const canvas=document.getElementById('wheel'); const img=canvas.toDataURL('image/png');
       const pageW=pdf.internal.pageSize.getWidth()-80; const ratio=pageW/canvas.width; const imgH=canvas.height*ratio;
       pdf.addImage(img,'PNG',40,60,pageW,imgH);
+
+      // imagen de referencia (si dataURL)
+      if (refImgDataUrl) {
+        let yAfter = 60 + imgH + 12;
+        if (yAfter > pdf.internal.pageSize.getHeight()-200){
+          pdf.addPage(); pdf.setFillColor(255,230,240);
+          pdf.rect(0,0,pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(),'F');
+          yAfter = 60;
+        }
+        pdf.addImage(refImgDataUrl, 'PNG', 40, yAfter, pageW, 0);
+      }
+
       const rep=document.getElementById('report'); const text=rep.innerText||rep.textContent||'';
       pdf.setFont('helvetica','normal'); pdf.setFontSize(12);
-      const lines=pdf.splitTextToSize(text,pageW); let y=80+imgH;
+      const lines=pdf.splitTextToSize(text,pageW); let y=80+imgH+(refImgDataUrl?220:0);
       if(y+lines.length*14>pdf.internal.pageSize.getHeight()-60){ pdf.addPage(); pdf.setFillColor(255,230,240); pdf.rect(0,0,pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(),'F'); y=60; }
       pdf.text(lines,40,y); pdf.save('Carta_Astral.pdf');
     }catch(e){ console.error(e); show('No se pudo generar el PDF.'); }
@@ -464,6 +523,7 @@ window.addEventListener('load', () => {
   document.getElementById('btnPdf').addEventListener('click', downloadPDF);
   document.getElementById('btnDocx').addEventListener('click', downloadDocx);
 
+  // Render inicial
   renderAll();
 });
 </script>
